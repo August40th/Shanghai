@@ -1,0 +1,30 @@
+<!-- table.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shanghai Rummy - Table</title>
+<link rel="stylesheet" href="table.css" />
+</head>
+<body>
+  <div id="table-container">
+    <!-- Draw and discard piles -->
+    <div id="drawPile" class="pile"></div>
+    <div id="discardPile" class="pile">Discard</div>
+    <!-- Containers for players and contracts -->
+    <div id="playersContainer"></div>
+    <div id="contractsContainer"></div>
+  </div>
+
+  <script src="initDeck.js"></script>
+  <script src="tableManager.js"></script>
+  <script src="cardManager.js"></script>
+  <script>
+  const gs = localStorage.getItem('gameSetup');
+  let setup;
+      setup = JSON.parse(gs);
+      window.initTable(setup.playerNames);
+</script>
+</body>
+</html>

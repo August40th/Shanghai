@@ -1,0 +1,429 @@
+/* table.css */
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
+  font-family: Arial, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+#table-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: visible;
+}
+
+.pile {
+  position: absolute;
+  width: 120px;
+  height: 160px;
+  background: transparent;
+  border: 3px solid black;
+  border-radius: 10px;
+  font-weight: bold;
+  font-size: 22px;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  z-index: 9999;
+  color: white;
+  cursor: pointer;
+}
+
+.player {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 260px;
+  background: rgba(255 255 255 / 0.95);
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+  z-index: 1000;
+}
+
+.MyTurn {
+  background: #98fb98;
+}
+
+.MyTurn.HasDrawn {
+  background: #ffffbf;
+}
+
+.Idiscarded {
+  background: #FF9999;
+}
+
+.nameplate {
+  font-weight: bold;
+  font-size: 20px;
+  margin-bottom: 2px;
+  color: #111;
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.lay-down-btn {
+  width: 100%;
+  margin-bottom: 2px;
+  padding: 6px 0;
+  font-size: 14px;
+  font-weight: bold;
+  color: #fff;
+  background-color: #777; 
+  border: none;
+  border-radius: 4px;
+  cursor: not-allowed;
+  transition: background-color 0.2s ease;
+}
+
+.player.MyTurn .lay-down-btn {
+  background-color: #2ecc71;
+  cursor: pointer;
+}
+
+.lay-down-btn:disabled {
+  opacity: 0.6;
+}
+
+.stats {
+  width: 100%;
+  display: flex;            
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #333;
+}
+
+.stats > div {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.contract-area {
+  position: absolute;
+  width: 320px;
+  height: 90px;
+  background: white;
+  border-radius: 10px;
+  border: 2px solid #444;
+  font-weight: bold;
+  font-size: 20px;
+  text-align: center;
+  line-height: 75px;
+  color: #111;
+  user-select: none;
+  box-shadow: 0 0 6px rgba(0,0,0,0.3);
+  pointer-events: auto;
+  z-index: 500;
+  transform: translate(-50%, 0);
+}
+
+.hand-area {
+  display: flex;
+  align-items: center;
+  overflow: visible;
+  width: 100%;
+  height: 75px;
+  user-select: none;
+  min-width: 40px;
+}
+
+.card {
+  position: relative;
+  width: 45px;
+  height: 65px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  flex-shrink: 0;
+  user-select: none;
+  cursor: default;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+  font-family: Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+.card .rank {
+  position: absolute;
+  top: 6%;
+  right: 7%;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.card .suit {
+  font-size: 20px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.contract-subareas-wrapper {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 4px;
+  border: 1px dashed #3a2e01;
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.contract-subarea {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  max-width: none;
+  min-width: 0;
+
+  padding: 2px;
+  border-radius: 4px;
+  border: 1px solid #000;
+  background-color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-sizing: border-box;
+  min-height: 75px;
+  user-select: none;
+}
+
+.contract-subarea.isValid {
+  background-color: #98fb98;
+}
+
+.round-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 300px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
+  border: 8px solid red;
+  color: white;
+  padding: 24px 40px;
+  font-size: 24px;
+  font-weight: bold;
+  border-radius: 16px;
+  text-align: center;
+  z-index: 10000;
+  user-select: none;
+  cursor: pointer;
+  white-space: pre-line;
+}
+/* --------------------------------------------------------------
+   POPUP STYLING – round‑winner, scores grid, game‑winner
+   -------------------------------------------------------------- */
+
+.round-winner-popup,
+.game-winner-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 340px;
+  padding: 30px 20px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
+  border: 8px solid #ffeb3b;          /* bright gold border */
+  color: #fff;
+  font-size: 28px;
+  font-weight: bold;
+  text-align: center;
+  border-radius: 16px;
+  z-index: 12000;
+  cursor: pointer;
+  user-select: none;
+}
+
+#scores-popup {
+  position: fixed;
+  top: 10%;
+  left: 50%;
+  width: 90%;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
+  color: white;
+  border: 6px solid black;
+  border-radius: 12px;
+  padding: 12px;
+  z-index: 11500;
+  font-family: Arial, sans-serif;
+  cursor: pointer;
+}
+.scores-title{
+  background: black;
+  font-size: 84px;
+}
+
+.scores-header {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  background: black;
+  color: white;
+  font-weight: bold;
+  text-align: center;
+  padding: 6px 0;
+}
+
+.scores-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  border-bottom: 1px solid red;
+  text-align: center;
+  padding: 4px 0;
+  background: black;
+  color: white;
+}
+
+.cell {
+  padding: 2px 4px;
+}
+
+.corner { background: transparent; }
+.player-name { background: black;   border-bottom: 1px solid red;}
+.round-index { background: black; font-weight: bold; }
+.score { background: #black; }
+
+.lowest-score {
+  outline: 3px solid #ff1744;
+  background: black;
+}
+
+#scores-popup,
+.round-winner-popup,
+.game-winner-popup {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* BUY CLOCK POPUP STYLES */
+
+.buy-clock-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 1500px;
+  height: 600px;
+  max-width: 90vw;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
+  border: 8px solid #ffeb3b; /* bright gold border */
+  color: white;
+  font-family: Arial, sans-serif;
+  font-weight: bold;
+  padding: 20px 24px;
+  border-radius: 16px;
+  z-index: 15000;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.buy-clock-title {
+  font-size: 28px;
+  margin: 0;
+  user-select: none;
+}
+
+.buy-clock-discard-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  justify-content: center;
+  width: 100%;
+}
+
+.buy-clock-discard-card {
+  width: 120px !important;
+  height: 160px !important;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.75);
+  border-radius: 8px !important;
+  top: 20px;
+  left: 20px;
+}
+
+.buy-clock-countdown {
+  font-size: 52px;
+  font-weight: 900;
+  color: #ffeb3b;
+  user-select: none;
+  min-width: 64px;
+}
+
+.buy-clock-buttons-wrapper {
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  width: 100%;
+  justify-content: center;
+  padding-bottom: 8px;
+}
+
+.buy-clock-player-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 110px;
+  user-select: none;
+}
+
+.buy-clock-player-name {
+  font-weight: 700;
+  color: #ffe680;
+  margin-bottom: 6px;
+  font-size: 16px;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.buy-clock-btn {
+  padding: 8px 14px;
+  font-weight: 700;
+  background-color: #555;
+  border: none;
+  border-radius: 6px;
+  color: #ccc;
+  cursor: pointer;
+  user-select: none;
+  width: 110px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.buy-clock-btn.buying {
+  background-color: #2ecc71;
+  color: white;
+}
+
+.buy-clock-btn:disabled {
+  background-color: #333;
+  color: #666;
+  cursor: not-allowed;
+}

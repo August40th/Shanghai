@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Shanghai Rummy</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+
+<header>
+  <div class="title">Shanghai</div>
+  <div class="underlines">
+    <div></div>
+    <div class="thin"></div>
+  </div>
+</header>
+
+<!-- Tabs in correct order -->
+<div class="tabs">
+  <button class="tab-btn active" id="tab-summary">Quick Summary</button>
+  <button class="tab-btn" id="tab-custom">Custom Rules</button>
+  <button class="tab-btn" id="tab-players">Players</button>
+  <button class="tab-btn" id="tab-detailed">Detailed Rules</button>
+  <button class="tab-btn" id="tab-cards">Customize Cards</button>
+  <button class="start-btn">START GAME</button>
+</div>
+
+<!-- Content sections in correct order -->
+<div class="container">
+
+<!-- Quick Summary Tab -->
+<div id="content-summary" class="card">
+  <h2>Quick Summary</h2>
+  <div class="summary-content"></div>
+</div>
+
+<!-- Custom Rules Tab -->
+<div id="content-custom" class="card" style="display:none">
+  <div class="rules-grid">
+    <div class="rule-column">
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="extraDeckChk">
+          <span class="compact-slider"></span>
+        </label>
+        <div class="rule-label" data-tooltip="Adds 1 extra deck to the game">Extra Deck
+        </div>
+      </div>
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="extraSuitChk">
+          <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Adds a 5th ★ suit to each standard deck">Extra Suit (★)
+          </div>
+      </div>
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="wrapRunsChk">
+          <span class="compact-slider"></span>
+        </label>
+            <div class="rule-label" data-tooltip="Aces may be high AND low runs (K-A-2-3)">Wrap-Around Runs
+            </div>
+        </div>
+    </div>
+    <div class="rule-column">
+      <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="wildCardsChk" checked>
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Wild cards may represent any rank/suit">Wild Cards
+          </div>
+        </div>
+      <div class="rule-item" style="gap:14px">
+        <button id="wildTypeBtn" class="wild-type-btn">Classic</button>
+        <div class="rule-label" data-tooltip="Classic: 3♦/3♥, Extra: 3♦/3♥/3★, or Jokers(1 red 1 black joker per deck)">Wild Type</div></div>
+      <div class="rule-item" style="gap:14px">
+        <button id="wildSwapBtn" class="wild-swap-btn">Off</button>
+        <div class="rule-label" data-tooltip="Players can swap a played wild card with the card it is standing in place for from his/her hand. Pre: lay down is required before discarding, Post: swaps are allowed after lay down";>Wild Swap
+        </div>
+      </div>
+    </div>
+    <div class="rule-column">
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="fastBuyChk" checked>
+          <span class="compact-slider"></span>
+        </label>
+          <div class="rule-label" data-tooltip="First player to declare buy take priority, otherwise the player closest to his/her next turn takes priority">Fast Buying</div>
+      </div>
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="optOutChk">
+          <span class="compact-slider"></span>
+        </label>
+        <div class="rule-label" data-tooltip="Allow players to opt out of a declared buy">Opt Out</div>
+      </div>
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="selfDiscardChk">
+          <span class="compact-slider"></span>
+        </label>
+        <div class="rule-label" data-tooltip="A player can buy his/her own discard, good for later rounds of a small 3-4 player game">Self-Discard Buying</div>
+      </div>
+      <div style="margin-top:8px">
+        <div class="clock-label" data-tooltip="Time availbe after a discard to declare a buy">Buying Clock (seconds)</div>
+          <input id="buyClockRange" type="range" min="5" max="40" value="16">
+        <div id="buyClockValue" style="min-width:30px;text-align:right">16</div>
+      </div>
+    </div>
+  </div>
+  <!-- Shanghai rules under buy clock -->
+  <div class="rules-grid" style="margin-top:12px">
+    <div class="rule-column">
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="softShanghaiChk">
+          <span class="compact-slider"></span>
+        </label>
+        <div class="rule-label" data-tooltip="Be the only player to lay down the round's contract and end the round on a later turn +25 points to all other players.">Soft Shanghai</div>
+      </div>
+    </div>
+    <div class="rule-column">
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="hardShanghaiChk" checked>
+          <span class="compact-slider"></span>
+        </label>
+        <div class="rule-label" data-tooltip="Be the first player to lay down the round's contract and end the round on the same turn +50 points to all other players.">Shanghai</div>
+      </div>
+    </div>
+    <div class="rule-column">
+      <div class="rule-item">
+        <label class="compact-switch">
+          <input type="checkbox" id="finalShanghaiChk">
+          <span class="compact-slider"></span>
+        </label>
+        <div class="rule-label" data-tooltip="Shanghai on the 7th rounds +100 points to all other players.">Final Shanghai</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Players Tab -->
+<div id="content-players" class="card players-card" style="display:none">
+  <div class="players-left">
+    <label>Player Name:
+      <input type="text" id="humanNameInput" value="Player1" style="width:60%;padding:6px;border-radius:6px;border:0;background:rgba(0,0,0,0.12);color:#fff">
+    </label>
+    <div style="font-weight:700">Computers</div>
+    <div class="player-controls">
+      <button id="decComp" class="btn" style="background: var(--on-red);color:white">-</button>
+      <div id="numCompDisplay" style="width:24px;text-align:center">5</div>
+      <button id="incComp" class="btn" style="background: var(--on-red);color:white">+</button>
+      <div style="width:12px"></div>
+      <button id="randomizeBtn" class="btn random-btn">Randomize Names</button>
+    </div>
+  </div>
+  <div class="players-grid" id="playersGrid"></div>
+</div>
+
+<!-- Detailed Rules Tab -->
+<div id="content-detailed" class="card" style="display:none">
+  <div class="detailed-card">
+    <div class="detailed-header">
+      <button class="arrow-btn arrow-left" id="prevDetailed">&#8592;</button>
+      <span id="detailedTitle">Summary</span>
+      <button class="arrow-btn arrow-right" id="nextDetailed">&#8594;</button>
+    </div>
+    <div class="rule-page active" data-title="Detailed Summary">
+      <p><strong>SHANGHAI</strong> is a rummy style card game containing seven rounds.</p>
+      <p>Players take turns with a mandatory action of drawing one card from either draw or discard pile, and discarding one card from his/her hand to the top of the discard pile</p>
+      <p>Each round players aim to collect that round's <strong>CONTRACT</strong> of <strong>SETS</strong> and <strong>RUNS</strong></p>
+      <p>A <strong>SET</strong> is 3+ cards of the same rank</p>
+      <p>A <strong>RUN</strong> is 4+ cards of the same suit in sequential order (e,g, 4♣ 5♣ 6♣ 7♣). Aces are high <strong>OR</strong> low (A-2-3-4 or J-Q-K-A)</p>
+      <p><strong>WILD CARDS</strong> of the type selected can assume <strong>ANY</strong> rank and/or suit but count 20 points if left in your hand at the end of the round</p>
+      <p>Once per round, when a player has collected the <strong>ENTIRE CONTRACT</strong> for the round he/she may choose to <strong>LAY DOWN</strong> the entire contract face up in the play area after taking his/her draw action</p>
+      <p>After laying down players may <strong>PLAY</strong> cards from their hand onto any laid down contract so long as the played card does not invalidate the contract</p>
+      <p>The first player to discard the final card from his/her hand ends the round and scores <strong>ZERO POINTS</strong> for that round</p>
+      <p>The objective is to have the <strong>LOWEST SCORE</strong> at the end of the game. </p>      
+    </div>
+    <div class="rule-page" data-title="Player Actions">
+      <p><strong>Turn Phase:</strong> draw → lay down → play → discard</p>
+      <p><strong>Draw (mandatory)</strong>: Take a card from either the draw pile or discard pile</p>
+      <p><strong>Wild Swap (optional)</strong>: Players may swap a played wild card in the play area with the exact card it is standing in place for. Pre: This must be immediately followed with a valid lay down</p>
+      <p><strong>Lay Down (optional)</strong>: Place the required contract for the current round face-up. This can only be done once per round</p>
+      <p><strong>Play (optional)</strong>: After laying down, you may play additional cards onto existing sets and runs</p>
+      <p><strong>Discard (mandatory)</strong>: Discard one card to end your turn, discard the last card in your hand to end the round scoring zero points</p>
+      <p><strong>Buy (optional)</strong>: Between turns, players may <strong>BUY</strong> the top discard card within 16 seconds, also drawing an additional card from the draw pile. First to declare gets the card. Players may opt out after declaring a buy.Limited to three buys per round</p>
+    </div>
+    <div class="rule-page" data-title="Shanghai Penalty">
+      <p><strong>Soft Shanghai</strong>: When a player is the first to lay down and ends the round on a subsequent turn before any other players lay down, +25 point penalty to all other players' scores.</p>
+      <p><strong>Shanghai</strong>: When a player is the first to lay down and plays all cards except a final discard in a single turn ending the round, +50 point penalty to all other players' scores.</p>
+      <p><strong>Final Shanghai</strong>: A Shanghai during the final round (round 7) +100 point penalty to all other players' scores.</p>
+    </div>
+    <div class="rule-page" data-title="Contracts">
+      <p>There are 7 rounds, each with a different contract of sets and/or runs that players must collect if he/she wants to win/end the current round.</p>
+      <p>Round 1: 2 Sets</p>
+      <p>Round 2: 1 Set + 1 Run</p>
+      <p>Round 3: 2 Runs</p>
+      <p>Round 4: 3 Sets</p>
+      <p>Round 5: 2 Sets + 1 Run</p>
+      <p>Round 6: 1 Set + 2 Runs</p>
+      <p>Round 7: 3 Runs</p>
+    </div>
+    <div class="rule-page" data-title="Scoring">
+      <p>At the end of each round, each player scores any cards remaining in his/her hand. After all seven rounds the player with the lowest score wins the game.</p>
+      <p>Aces score 15 points each</p>
+      <p>Jacks, Queens, and Kings score 10 points each.</p>
+      <p>Cards with values from 2 to 10 score their face value</p>
+      <p>Wild cards score 20 points each.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Customize Cards Tab -->
+<div id="content-cards" class="card" style="display:none">
+  <div class="card-customization" style="display: flex; gap: 180px;">
+
+    <!-- Left column: Suit buttons, color selectors, back customization -->
+    <div style="flex: 1; display: flex; flex-direction: column; max-width: 260px;">
+      <h3 style="margin-top: 0;">Face Design</h3>
+      <div class="suits-row" id="suitsRow" style="margin-bottom: 16px;"></div>
+
+      <!-- Color selector buttons with label under -->
+      <div style="display: flex; gap: 32px; margin-bottom: 12px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+          <button id="symbolColorBtn" class="color-select-btn" disabled
+            style="width: 40px; height: 40px; padding: 0; border-radius: 6px;"></button>
+          <span style="font-weight: 600; user-select: none;">Symbol</span>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+          <button id="bgColorBtn" class="color-select-btn" disabled
+            style="width: 40px; height: 40px; padding: 0; border-radius: 6px;"></button>
+          <span style="font-weight: 600; user-select: none;">Background</span>
+        </div>
+      </div>
+
+      <!-- Back customization controls -->
+      <div class="card-back-customization" style="display: flex; flex-direction: column; gap: 10px;">
+        <h3 style="margin-top: 0;">Back Design</h3>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+            <button id="backCenterColor" class="color-square" style="background:black; width: 32px; height: 32px;"></button>
+            Center
+          </label>
+          <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+            <button id="backEdgeColor1" class="color-square" style="background:#333; width: 32px; height: 32px;"></button>
+            Radius 1
+          </label>
+          <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+            <button id="backEdgeColor2" class="color-square" style="background:#666; width: 32px; height: 32px;"></button>
+            Radius 2
+          </label>
+          <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+            <button id="backEdgeColor3" class="color-square" style="background:#999; width: 32px; height: 32px;"></button>
+            Radius 3
+          </label>
+          <label style="display: center; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+            <button id="backEdgeOutlineColor" class="color-square" style="background:white; width: 32px; height: 32px;"></button>
+            Edge
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: Sliders and previews -->
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 220px;">
+      <div class="sliders-row" style="flex-direction: column; gap: 20px;">
+        <label style="display:flex; flex-direction: column; font-weight: 600;">
+          Suit Size:
+          <input type="range" id="suitSizeSlider" min="80" max="120" value="90" style="width: 100%;">
+        </label>
+        <label style="display:flex; flex-direction: column; font-weight: 600;">
+          Rank Size:
+          <input type="range" id="rankSizeSlider" min="55" max="80" value="65" style="width: 100%;">
+        </label>
+      </div>
+
+      <!-- Previews side by side -->
+      <div style="display: flex; gap: 16px; flex-wrap: nowrap;">
+        <div id="cardBackPreview" class="card-back-preview" style="flex: 1; min-width: 140px;"></div>
+        <div id="cardPreview" class="card-preview" style="flex: 1; min-width: 140px;"></div>
+        <div id="tablecardBackPreview" class="tablecard-back-preview" style="flex: 1; min-width: 65px;"></div>
+        <div id="tablecardPreview" class="tablecard-preview" style="flex: 1; min-width: 65px;"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="colorPickerPopup" class="color-picker-popup" style="display:none">
+    <div class="colors-grid"></div>
+    <button id="closeColorPickerBtn" class="close-color-picker">Close</button>
+  </div>
+</div>
+
+<!-- Tooltip placed under active content -->
+<div id="tooltipBar" class="tooltip-bar">Hover over a control for help.</div>
+
+<script src="setup.js"></script>
+<script src="tableManager.js"></script>
+</body>
+</html>
