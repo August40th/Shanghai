@@ -852,7 +852,7 @@
     players.forEach((_, i) => {
       const playerDiv = document.getElementById(`player-${i}`);
       if (playerDiv) {
-        playerDiv.classList.remove('MyTurn', 'HasDrawn', 'HasLaidDown');
+        playerDiv.classList.remove('MyTurn', 'HasDrawn', 'HasLaidDown', 'Idiscarded');
       }
     });
   
@@ -1500,8 +1500,7 @@
         // if everyone has acted, end timer now
         if (allActed()) {
           buyTime = 0;
-          countdown.textContent = '0';
-          title.textContent = `Buying Round - Time left: 0s`;
+          title.textContent = `Buying Window - Time left: 0s`;
         }
       });
   
