@@ -300,7 +300,11 @@ updateWildButtons();
 
 wildTypeBtn.addEventListener('click', () => {
   if (wildTypeBtn.classList.contains('disabled')) return;
-  wtIndex = (wtIndex + 1) % wildTypes.length;
+  do {
+    wtIndex = (wtIndex + 1) % wildTypes.length;
+  } while (
+    wildTypes[wtIndex] === 'Extra' && !document.getElementById('extraSuitChk').checked
+  );
   wildTypeBtn.textContent = wildTypes[wtIndex];
   updateSummary();
 });
@@ -418,6 +422,7 @@ function buildSuitButtons() {
       updateColorButtonsState();
       updatePreview();
       updateTablePreview();
+      saveSettingsToCookies(); 
     });
   });
 }
@@ -466,6 +471,8 @@ function createColorSquares(selectedColorHex, disallowedColorHex) {
         updateColorButtonsState();
         updatePreview();
         updateTablePreview();
+        saveSettingsToCookies(); 
+        buildSuitButtons();
       });
     }
   });
@@ -493,6 +500,7 @@ bgColorBtn.addEventListener("click", () => {
 
 closeColorPickerBtn.addEventListener("click", () => {
   colorPickerPopup.style.display = "none";
+  saveSettingsToCookies(); 
 });
 
 // Sliders event handlers
