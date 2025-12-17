@@ -260,55 +260,6 @@
     return false;
   }
 
-  function tryWildSwap(data, subAreaCards, wildIndices, subAreaIdx, label, myPlayer, hasLaidDown, owner) {
-    if (isWild(data.card) && isWild(subAreaCards[wildIdx])) return;
-    for (const wildIdx of wildIndices) {
-      const wildCard = subAreaCards[wildIdx];
-      if (
-        (label.includes("set") && window.isValidSet(replaceAt(subAreaCards, wildIdx, data.card))) ||
-        (label.includes("run") && window.isValidRun(replaceAt(subAreaCards, wildIdx, data.card)))
-      ) {
-        const flatSubs = subcontractCards[owner];
-        let countInArea = -1,
-          globalWildIdx = -1;
-        for (let i = 0; i < flatSubs.length; i++) {
-          if (flatSubs[i].subArea === subAreaIdx) countInArea++;
-          if (countInArea === wildIdx) {
-            globalWildIdx = i;
-            break;
-          }
-        }
-        if (globalWildIdx === -1) return false;
-
-        const hand = hands[myPlayer];
-        if (!hand) return false;
-
-        hand.splice(data.originIdx, 1);
-        hand.push(wildCard);
-
-        flatSubs.splice(globalWildIdx, 1, Object.assign({}, data.card, { subArea: subAreaIdx }));
-
-        // Track swap for revert
-        const swaps = wildSwaps.get(myPlayer) || [];
-        swaps.push({
-          subArea: subAreaIdx,
-          wildCardIndex: globalWildIdx,
-          wildCard: wildCard,
-          swapCard: data.card
-        });
-        wildSwaps.set(myPlayer, swaps);
-
-        return true;
-      }
-    }
-    return false;
-  }
-  function replaceAt(arr, idx, element) {
-    const copy = arr.slice();
-    copy[idx] = element;
-    return copy;
-  }
-
   function cancelWildSwaps() {
     const myTurnIdx = window.getMyTurnPlayerIndex();
     if (myTurnIdx === -1) return;
@@ -549,6 +500,14 @@
         renderCardArray(hands[myPlayer], myHandDiv, true, myTurnIdx, "hand");
         renderAllSubcontractAreas();
         window.validateLayDown(myTurnIdx);
+        const cardsInArea = flatArr.filter(c => c.subArea === subAreaIdx);
+        cardManager.renderCardArray(
+          cardsInArea,
+          sub.lastChild,  // the container inside the subcontract area div
+          !myHasLaidDown,
+          myTurnIdx,
+          'subcontract'
+        );
       };
     });
   
@@ -611,6 +570,7 @@
           if (allowWildSwap && wildIndices.length > 0) {
             // Try each wild card for swap
             for (const wildIdx of wildIndices) {
+              if (isWild(data.card) && isWild(subAreaCards[wildIdx])) continue;
               const wildCard = subAreaCards[wildIdx];
               const candidateCards = subAreaCards.slice();
               candidateCards[wildIdx] = data.card;
@@ -683,6 +643,14 @@
           renderCardArray(hands[myPlayer], myHandDiv, true, myTurnIdx, "hand");
           renderAllSubcontractAreas();
           window.validateLayDown(myTurnIdx);
+          const cardsInArea = flatArr.filter(c => c.subArea === subAreaIdx);
+          cardManager.renderCardArray(
+            cardsInArea,
+            sub.lastChild,  // the container inside the subcontract area div
+            !myHasLaidDown,
+            myTurnIdx,
+            'subcontract'
+          );
         };
       });
     });
