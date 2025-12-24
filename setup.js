@@ -39,7 +39,7 @@ function updateSummary() {
   const selfDiscardChk = document.getElementById('selfDiscardChk').checked;
 
   // Base summary content
-  let qsummary = "● 2 decks with 3 players, +1 deck for every 2+ players<br>";
+  let qsummary = "● 2 decks with 3 players, +1 deck for every 2 additional players<br>";
   // Handle extra deck rule
   if (extraDeck) {
     qsummary = qsummary.replace("2 decks with 3 players", "3 decks with 3 players");
@@ -955,4 +955,5 @@ document.querySelector('.start-btn').addEventListener('click', () => {
   // Redirect to table.html
   window.location.href = 'table.html';
 });
+
 
