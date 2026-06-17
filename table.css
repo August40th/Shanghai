@@ -1,4 +1,13 @@
-/* table.css */
+/* CHANGED: Added CSS custom properties for future touch support */
+:root {
+  --touch-target-min: 44px;
+  --card-width: 45px;
+  --card-height: 65px;
+  --card-overlap: 15.75px;  /* 35% of 45px */
+  --player-width: 260px;
+  --contract-width: 320px;
+}
+
 body, html {
   margin: 0;
   padding: 0;
@@ -38,7 +47,7 @@ body, html {
 .player {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 260px;
+  width: var(--player-width);
   background: rgba(255 255 255 / 0.95);
   border-radius: 12px;
   padding: 8px 12px;
@@ -48,19 +57,13 @@ body, html {
   align-items: center;
   user-select: none;
   z-index: 1000;
+  /* CHANGED: Added max-width constraint for small screens */
+  max-width: calc(100vw - 40px);
 }
 
-.MyTurn {
-  background: #98fb98;
-}
-
-.MyTurn.HasDrawn {
-  background: #ffffbf;
-}
-
-.Idiscarded {
-  background: #FF9999;
-}
+.MyTurn { background: #98fb98; }
+.MyTurn.HasDrawn { background: #ffffbf; }
+.Idiscarded { background: #FF9999; }
 
 .nameplate {
   font-weight: bold;
@@ -91,9 +94,7 @@ body, html {
   cursor: pointer;
 }
 
-.lay-down-btn:disabled {
-  opacity: 0.6;
-}
+.lay-down-btn:disabled { opacity: 0.6; }
 
 .stats {
   width: 100%;
@@ -111,10 +112,12 @@ body, html {
   box-sizing: border-box;
 }
 
+/* CHANGED: Contract area with responsive width */
 .contract-area {
   position: absolute;
-  width: 320px;
-  height: 90px;
+  width: min(var(--contract-width), 90vw);
+  height: auto;
+  min-height: 90px;
   background: white;
   border-radius: 10px;
   border: 2px solid #444;
@@ -128,6 +131,7 @@ body, html {
   pointer-events: auto;
   z-index: 500;
   transform: translate(-50%, 0);
+  padding: 8px;
 }
 
 .hand-area {
@@ -142,8 +146,8 @@ body, html {
 
 .card {
   position: relative;
-  width: 45px;
-  height: 65px;
+  width: var(--card-width);
+  height: var(--card-height);
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   flex-shrink: 0;
@@ -189,7 +193,6 @@ body, html {
   flex-shrink: 0;
   max-width: none;
   min-width: 0;
-
   padding: 2px;
   border-radius: 4px;
   border: 1px solid #000;
@@ -204,9 +207,7 @@ body, html {
   user-select: none;
 }
 
-.contract-subarea.isValid {
-  background-color: #98fb98;
-}
+.contract-subarea.isValid { background-color: #98fb98; }
 
 .round-popup {
   position: fixed;
@@ -228,9 +229,6 @@ body, html {
   cursor: pointer;
   white-space: pre-line;
 }
-/* --------------------------------------------------------------
-   POPUP STYLING – round‑winner, scores grid, game‑winner
-   -------------------------------------------------------------- */
 
 .round-winner-popup,
 .game-winner-popup {
@@ -241,7 +239,7 @@ body, html {
   padding: 30px 20px;
   transform: translate(-50%, -50%);
   background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
-  border: 8px solid #ffeb3b;          /* bright gold border */
+  border: 8px solid #ffeb3b;
   color: #fff;
   font-size: 28px;
   font-weight: bold;
@@ -270,7 +268,8 @@ body, html {
   font-family: Arial, sans-serif;
   cursor: pointer;
 }
-.scores-title{
+
+.scores-title {
   background: black;
   font-size: 84px;
 }
@@ -295,15 +294,11 @@ body, html {
   color: white;
 }
 
-.cell {
-  padding: 2px 4px;
-}
-
+.cell { padding: 2px 4px; }
 .corner { background: transparent; }
-.player-name { background: black;   border-bottom: 1px solid red;}
+.player-name { background: black; border-bottom: 1px solid red; }
 .round-index { background: black; font-weight: bold; }
-.score { background: #black; }
-
+.score { background: black; }
 .lowest-score {
   outline: 3px solid #ff1744;
   background: black;
@@ -318,18 +313,19 @@ body, html {
   user-select: none;
 }
 
-/* BUY CLOCK POPUP STYLES */
-
+/* CHANGED: Responsive buy clock popup */
 .buy-clock-popup {
   position: fixed;
   top: 50%;
   left: 50%;
-  width: 1500px;
-  height: 600px;
-  max-width: 90vw;
+  /* CHANGED: Responsive sizing instead of fixed 1500x600 */
+  width: 90vw;
+  max-width: 800px;
+  height: auto;
+  max-height: 80vh;
   transform: translate(-50%, -50%);
   background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
-  border: 8px solid #ffeb3b; /* bright gold border */
+  border: 8px solid #ffeb3b;
   color: white;
   font-family: Arial, sans-serif;
   font-weight: bold;
@@ -343,6 +339,8 @@ body, html {
   gap: 20px;
   box-sizing: border-box;
   text-align: center;
+  /* CHANGED: Scroll if content overflows */
+  overflow-y: auto;
 }
 
 .buy-clock-title {
@@ -378,13 +376,15 @@ body, html {
   min-width: 64px;
 }
 
+/* CHANGED: Responsive button wrapper with flex-wrap */
 .buy-clock-buttons-wrapper {
   display: flex;
-  gap: 24px;
-  overflow-x: auto;
+  gap: 16px;
   width: 100%;
   justify-content: center;
   padding-bottom: 8px;
+  /* CHANGED: Allow wrapping on small screens */
+  flex-wrap: wrap;
 }
 
 .buy-clock-player-wrap {
@@ -415,6 +415,8 @@ body, html {
   user-select: none;
   width: 110px;
   transition: background-color 0.3s ease, color 0.3s ease;
+  /* CHANGED: Minimum touch target size */
+  min-height: var(--touch-target-min);
 }
 
 .buy-clock-btn.buying {
@@ -426,4 +428,31 @@ body, html {
   background-color: #333;
   color: #666;
   cursor: not-allowed;
+}
+
+/* CHANGED: Future touch support - larger touch targets on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  :root {
+    --card-width: 58px;  /* 45px * 1.3 */
+    --card-height: 84px; /* 65px * 1.3 */
+  }
+  
+  .card {
+    width: var(--card-width);
+    height: var(--card-height);
+  }
+  
+  .lay-down-btn,
+  .buy-clock-btn {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+  }
+  
+  .card .suit {
+    font-size: 26px; /* 20px * 1.3 */
+  }
+  
+  .card .rank {
+    font-size: 18px; /* 14px * 1.3 */
+  }
 }
