@@ -636,30 +636,24 @@
     });
   }
 
-  // CHANGED: Completely refactored layoutPlayers for responsive spacing
+  // RESTORED: Original layoutPlayers function with hardcoded margins
   function layoutPlayers() {
     if (!tableContainer || players.length === 0) return;
+
     const w = tableContainer.clientWidth;
     const h = tableContainer.clientHeight;
 
-    // CHANGED: Dynamic margins based on viewport percentages
-    const marginH = Math.min(200, w * 0.15);
-    const marginVTop = Math.min(160, h * 0.12);
-    const marginVBottom = Math.min(220, h * 0.18);
+    // RESTORED: Original hardcoded margins
+    const marginH = 180;
+    const marginVTop = 180;
+    const marginVBottom = 270;
 
     const topLen = Math.max(0, w - 2 * marginH);
     const rightLen = Math.max(0, h - marginVTop - marginVBottom);
     const perimeter = topLen * 2 + rightLen * 2;
     
-    // CHANGED: Dynamic spacing based on player count
-    const basePlayerWidth = 260;
-    const baseContractHeight = 90;
-    const minBuffer = 20;
-    
-    const cornerInset = players.length >= 8 ? Math.min(110, w * 0.08) : Math.min(90, w * 0.06);
-
-    // CHANGED: Track occupied rectangles for collision detection
-    const occupiedRects = [];
+    // RESTORED: Original cornerInset logic
+    const cornerInset = players.length >= 8 ? 110 : 90;
 
     players.forEach((_, i) => {
       const playerDiv = document.getElementById(`player-${i}`);
@@ -676,49 +670,38 @@
 
       let x = 0, y = 0;
       switch (sideIndex) {
-        case 0: x = marginH + dist; y = marginVTop; break;
-        case 1: x = w - marginH; y = marginVTop + dist; break;
+        case 0:
+          x = marginH + dist;
+          y = marginVTop;
+          break;
+        case 1:
+          x = w - marginH;
+          y = marginVTop + dist;
+          break;
         case 2:
-          if (dist < cornerInset) x = w - marginH - cornerInset + dist;
-          else if (dist > topLen - cornerInset) x = marginH + (dist - (topLen - cornerInset));
-          else x = w - marginH - dist;
+          if (dist < cornerInset) {
+            x = w - marginH - cornerInset + dist;
+          } else if (dist > topLen - cornerInset) {
+            x = marginH + (dist - (topLen - cornerInset));
+          } else {
+            x = w - marginH - dist;
+          }
           y = h - marginVBottom;
           break;
-        case 3: x = marginH; y = h - marginVBottom - dist; break;
+        case 3:
+          x = marginH;
+          y = h - marginVBottom - dist;
+          break;
       }
 
-      // CHANGED: Adjust position to prevent contract overlap
-      const playerHeight = playerDiv.offsetHeight || 180;
-      const contractHeight = contractDiv?.offsetHeight || 90;
-      const totalHeight = playerHeight + contractHeight + minBuffer;
-      
-      if (sideIndex === 2 && y + totalHeight > h - marginVBottom) {
-        y = h - marginVBottom - totalHeight;
-      }
-
-      // CHANGED: Simple collision detection
-      const playerRect = {
-        left: x - basePlayerWidth / 2,
-        right: x + basePlayerWidth / 2,
-        top: y - playerHeight / 2,
-        bottom: y + playerHeight / 2
-      };
-
-      let hasOverlap = occupiedRects.some(rect => 
-        !(playerRect.right < rect.left || playerRect.left > rect.right || 
-          playerRect.bottom < rect.top || playerRect.top > rect.bottom)
-      );
-
-      if (hasOverlap && sideIndex === 2) y -= (playerHeight + minBuffer);
-      occupiedRects.push(playerRect);
-
+      // RESTORED: Original positioning without collision detection
       playerDiv.style.left = `${x}px`;
       playerDiv.style.top = `${y}px`;
 
-      // CHANGED: Position contract with guaranteed spacing
+      const ph = playerDiv.offsetHeight || 180;
       if (contractDiv) {
         contractDiv.style.left = `${x}px`;
-        contractDiv.style.top = `${y + playerHeight / 2 + minBuffer}px`;
+        contractDiv.style.top = `${y + ph / 2 + 9}px`;
       }
     });
   }
