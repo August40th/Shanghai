@@ -585,6 +585,11 @@
     renderHands(hands);
     cardManager.renderDiscardPile();
     refreshLayButtons();
+    
+    // ADD: Check if first player is AI after dealing
+    if (window.aiData && window.aiData.isAI[RoundStarter]) {
+      setTimeout(() => executeAITurn(RoundStarter, window.aiData.difficulties[RoundStarter]), 1500);
+    }
   }
 
   function renderHands(handsObj) {
@@ -714,9 +719,156 @@
   function renderAllSubcontractAreas() { cardManager.renderAllSubcontractAreas(); }
   function renderDiscardPile() { cardManager.renderDiscardPile(); }
 
+  // ADD: AI Turn Execution Functions
+  async function executeAITurn(playerIdx, difficulty) {
+    console.log(`AI Turn: Player ${playerIdx} (${difficulty})`);
+    
+    const playerDiv = document.getElementById(`player-${playerIdx}`);
+    if (!playerDiv || !playerDiv.classList.contains('MyTurn')) return;
+    
+    // Step 1: Draw decision
+    await aiDrawDecision(playerIdx);
+    
+    // Future steps will go here (lay down, play, discard)
+    // For now, log that we need human to complete or continue with placeholder
+    console.log('AI Draw complete. Phase 1 implementation - human must complete turn or extend AI logic');
+  }
+
+  async function aiDrawDecision(playerIdx) {
+    return new Promise(resolve => {
+      setTimeout(() => {
+        const player = players[playerIdx];
+        const hand = hands[player] || [];
+        
+        // Default: draw from draw pile
+        let drawSource = 'draw';
+        
+        // Check if discard pile has card that obviously helps
+        const topDiscard = discardPile[discardPile.length - 1];
+        if (topDiscard) {
+          const discardHelps = evaluateDiscardBenefit(topDiscard, hand, playerIdx);
+          if (discardHelps) {
+            console.log(`AI Player ${playerIdx}: Taking discard ${topDiscard.rank}${topDiscard.suit} - obvious benefit`);
+            drawSource = 'discard';
+          } else {
+            console.log(`AI Player ${playerIdx}: Discard ${topDiscard.rank}${topDiscard.suit} not beneficial, drawing from pile`);
+          }
+        }
+        
+        // Execute the draw
+        window.drawCardFrom(drawSource, playerIdx);
+        resolve();
+      }, 800); // 800ms delay for visibility
+    });
+  }
+
+  function evaluateDiscardBenefit(card, hand, playerIdx) {
+    // SIMULATION: Would taking this card improve the hand?
+    
+    // Test 1: Does it complete the contract immediately?
+    const simulatedHand = [...hand, card];
+    if (canCompleteContract(simulatedHand, roundIndex)) {
+      console.log('  -> Completes contract!');
+      return true;
+    }
+    
+    // Test 2: Does it form a valid set with existing cards?
+    const sameRank = hand.filter(c => c.rank === card.rank);
+    if (sameRank.length >= 2) { // Would make 3+ of a kind
+      const testSet = [...sameRank, card];
+      if (isValidSet(testSet)) {
+        console.log('  -> Forms valid set');
+        return true;
+      }
+    }
+    
+    // Test 3: Does it extend or complete a potential run?
+    const sameSuit = hand.filter(c => c.suit === card.suit);
+    if (sameSuit.length >= 3) {
+      // Check if card fits in sequence with existing suit cards
+      const testRun = [...sameSuit, card];
+      if (isValidRun(testRun)) {
+        console.log('  -> Forms valid run');
+        return true;
+      }
+      
+      // Check if card extends a near-run (e.g., have 5-6-7, discard is 4 or 8)
+      const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
+      const cardValue = rankValues[card.rank] || 0;
+      const suitRanks = sameSuit.map(c => rankValues[c.rank] || 0).sort((a,b) => a-b);
+      
+      // Check for sequential potential (card is adjacent to existing sequence)
+      for (let i = 0; i < suitRanks.length; i++) {
+        if (Math.abs(suitRanks[i] - cardValue) === 1) {
+          // Card is adjacent to existing card of same suit
+          console.log('  -> Extends potential run');
+          return true;
+        }
+      }
+    }
+    
+    // Test 4: Is it a wild card? (Always take)
+    if (isWild(card)) {
+      console.log('  -> Wild card');
+      return true;
+    }
+    
+    // Test 5: Does it significantly reduce hand point value?
+    // (e.g., replacing a high card or enabling play of high cards)
+    const handValue = calculateHandValue(hand);
+    const simulatedValue = calculateHandValue(simulatedHand);
+    if (simulatedValue < handValue - 10) { // Reduces value by 10+ points
+      console.log('  -> Significantly reduces hand value');
+      return true;
+    }
+    
+    return false;
+  }
+
+  function canCompleteContract(hand, roundNum) {
+    // Check if hand can fulfill current round's contract
+    const requiredSets = (roundNum === 1 || roundNum === 4 || roundNum === 5) ? 
+      (roundNum === 4 ? 3 : roundNum === 5 ? 2 : 2) : 0;
+    const requiredRuns = (roundNum === 2 || roundNum === 3 || roundNum === 6 || roundNum === 7) ?
+      (roundNum === 3 ? 2 : roundNum === 6 ? 2 : roundNum === 7 ? 3 : 1) : 0;
+    
+    // This is simplified - full implementation would check all combinations
+    // For now, check if we have enough cards to potentially make the contract
+    return false; // Placeholder - will be refined in Phase 1 full implementation
+  }
+
+  function calculateHandValue(hand) {
+    // Sum of point values in hand
+    let value = 0;
+    hand.forEach(card => {
+      if (isWild(card)) value += 20;
+      else if (card.rank === 'A') value += 15;
+      else if (['10', 'J', 'Q', 'K'].includes(card.rank)) value += 10;
+      else if (!isNaN(parseInt(card.rank))) value += parseInt(card.rank);
+    });
+    return value;
+  }
+
   async function initTable(playerNames) {
     loadCustomization();
     createPlayers(playerNames);
+    
+    // ADD: Retrieve AI data from localStorage
+    const gs = localStorage.getItem('gameSetup');
+    let aiData = { isAI: [], difficulties: [] };
+    try {
+      const setup = JSON.parse(gs);
+      aiData.isAI = setup.isAI || playerNames.map(() => false);
+      aiData.difficulties = setup.difficulties || playerNames.map(() => null);
+    } catch (e) {
+      // Fallback: assume all human if no AI data
+      aiData.isAI = playerNames.map(() => false);
+      aiData.difficulties = playerNames.map(() => null);
+    }
+    
+    // Store AI data globally for access during turns
+    window.aiData = aiData;
+    
     RoundStarter = Math.floor(Math.random() * players.length);
     const firstPlayerDiv = document.getElementById(`player-${RoundStarter}`);
     if (firstPlayerDiv) {
@@ -782,6 +934,11 @@
     cardManager.renderAllSubcontractAreas();
     updatePlayerStats(hands);
     refreshLayButtons();
+    
+    // ADD: Check if first player is AI and trigger their turn
+    if (window.aiData && window.aiData.isAI[RoundStarter]) {
+      setTimeout(() => executeAITurn(RoundStarter, window.aiData.difficulties[RoundStarter]), 1500);
+    }
   }
 
   (function setupDynamicHover() {
@@ -849,7 +1006,16 @@
     }
     const newDiv = document.getElementById(`player-${newTurnIdx}`);
     if (newDiv) newDiv.classList.add('MyTurn');
-    await showBuyClockPopup();
+    
+    // ADD: Check if new player is AI
+    if (window.aiData && window.aiData.isAI[newTurnIdx]) {
+      await showBuyClockPopup();
+      setTimeout(() => executeAITurn(newTurnIdx, window.aiData.difficulties[newTurnIdx]), 1000);
+    } else {
+      // Human player - show buy clock normally
+      await showBuyClockPopup();
+    }
+    
     cardManager.setupDragDrop();
     players.forEach((p, i) => {
       const handDiv = document.getElementById(`hand-${i}`);
@@ -1106,6 +1272,10 @@
   window.initTable = initTable;
   window.resetTurnState = resetTurnState;
   window.validateLayDown = validateLayDown;
+  
+  // ADD: Expose AI functions globally
+  window.executeAITurn = executeAITurn;
+  window.aiDrawDecision = aiDrawDecision;
 
   window.addEventListener('resize', () => { layoutPiles(); layoutPlayers(); });
 })();
