@@ -106,7 +106,7 @@ const decComp=document.getElementById('decComp');
 const incComp=document.getElementById('incComp');
 const randomizeBtn=document.getElementById('randomizeBtn');
 const aiPool=["Alice","Bob","Charlie","David","Erik","Frank","George","Henry","Ivy","Jason","Kerry","Lauren","Mark","Ned","Oscar","Paul","Rob","Tom","Victor","Zeb"];
-const difficultyTooltips={"Easy":"Basic evaluation","Medium":"Hand + discard pile evaluation","Hard":"Tracks player discards","Ruthless":"Vetoes buys"};
+const difficultyTooltips={"Easy":"Evaluates rules and its own hand, cards it has discarded, and last 5 discards in the discard pile","Medium":"Evaluates its own hand, the entire discard pile, plus a 33% chance to maximize the score of the cards played when laying down and playing cards into the play area as to minimize the score of the cards remaining in its hand after discarding.","Hard":"Normal AI with 75% chance to maximize laydown, plus tracks which cards players have taken and discarded to infer which sets/runs other players might be collecting to better evaluate discard choices, the cards remaining in the draw pile, and which cards to buy","Ruthless":"Hard AI with 50% chance to veto another player's buy if it reasonablly infers that the buyer needs that card to get closer to a complete a run or set he/she is collecting"};
 
 function buildPlayerSlots() {
   const existingSlots = document.querySelectorAll('#playersGrid .player-slot');
@@ -536,15 +536,36 @@ updateTablePreview();
 updateCardBackPreview();
 updateTableCardBackPreview();
 
+// CHANGED: Store AI data with game setup
 document.querySelector('.start-btn').addEventListener('click', () => {
   const humanName = document.getElementById('humanNameInput').value.trim() || 'Player1';
   const compNames = [];
-  document.querySelectorAll('#playersGrid .player-slot:not(.inactive)').forEach(slot => {
+  const compDifficulties = [];
+  
+  document.querySelectorAll('#playersGrid .player-slot:not(.inactive)').forEach((slot, i) => {
     const input = slot.querySelector('input.player-name-input');
-    if (input) { const val = input.value.trim(); if (val) compNames.push(val); }
+    const diffBtn = slot.querySelector('button.difficulty-btn');
+    if (input) {
+      const val = input.value.trim();
+      if (val) {
+        compNames.push(val);
+        compDifficulties.push(diffBtn ? diffBtn.textContent : "Medium");
+      }
+    }
   });
+  
   const playerNames = [humanName, ...compNames];
-  if (playerNames.length < 3) { alert('Please have at least 3 players to start the game.'); return; }
-  localStorage.setItem('gameSetup', JSON.stringify({playerNames}));
+  if (playerNames.length < 3) {
+    alert('Please have at least 3 players to start the game.');
+    return;
+  }
+
+  // CHANGED: Store AI info with game setup
+  localStorage.setItem('gameSetup', JSON.stringify({ 
+    playerNames,
+    isAI: [false, ...compNames.map(() => true)],
+    difficulties: [null, ...compDifficulties]
+  }));
+
   window.location.href = 'table.html';
 });
