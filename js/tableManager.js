@@ -44,6 +44,9 @@
     7: ['Run 1', 'Run 2', 'Run 3']
   };
   
+  // ADD: Flag to track if score popup is open
+  let scorePopupOpen = false;
+  
   function getMyTurnPlayerIndex() {
     return players.findIndex((_, i) => {
       const el = document.getElementById(`player-${i}`);
@@ -454,14 +457,14 @@
       window.removeEventListener('keydown', closeRoundWinner);
       roundWinnerPopup.remove();
       showScoresPopup();
-      if (roundIndex >= 7) showGameWinnerPopup();
-      else startNextRound();
+      // Note: startNextRound is now called from scores popup close
     };
     roundWinnerPopup.addEventListener('click', closeRoundWinner);
     window.addEventListener('keydown', closeRoundWinner);
   }
   
   function showScoresPopup() {
+    scorePopupOpen = true; // ADD: Set flag
     let container = document.getElementById('scores-popup');
     if (!container) {
       container = document.createElement('div');
@@ -499,10 +502,20 @@
     newTotalRow.className = 'scores-row scores-total-row';
     newTotalRow.innerHTML = totalHTML;
     container.appendChild(newTotalRow);
+    
+    // ADD: Modified close handler to deal next round after close
     const close = () => {
       container.removeEventListener('click', close);
       window.removeEventListener('keydown', close);
       container.remove();
+      scorePopupOpen = false; // Clear flag
+      
+      // ADD: Start next round after score popup closes
+      if (roundIndex < 7) {
+        startNextRound();
+      } else {
+        showGameWinnerPopup();
+      }
     };
     container.addEventListener('click', close);
     window.addEventListener('keydown', close);
@@ -541,11 +554,18 @@
   }
   
   async function startNextRound() {
+    // ADD: Check if score popup is still open, wait if so
+    if (scorePopupOpen) {
+      console.log('Waiting for score popup to close before dealing next round...');
+      await waitForScorePopupClose();
+    }
+    
     roundFinished = false; 
     Softwindow = false;  
     Hardwindow = false;  
     roundIndex++;
-    await showRoundPopup(roundIndex);
+    // REMOVED: showRoundPopup call - will handle after score popup in endRound
+    
     const allCards = [];
     players.forEach((_, i) => {
       const playerDiv = document.getElementById(`player-${i}`);
@@ -586,10 +606,25 @@
     cardManager.renderDiscardPile();
     refreshLayButtons();
     
-    // ADD: Check if first player is AI after dealing
+    // Show round popup after dealing
+    await showRoundPopup(roundIndex);
+    
+    // Check if first player is AI after dealing
     if (window.aiData && window.aiData.isAI[RoundStarter]) {
       setTimeout(() => executeAITurn(RoundStarter, window.aiData.difficulties[RoundStarter]), 1500);
     }
+  }
+
+  // ADD: Helper to wait for score popup close
+  function waitForScorePopupClose() {
+    return new Promise(resolve => {
+      const checkInterval = setInterval(() => {
+        if (!scorePopupOpen) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 100);
+    });
   }
 
   function renderHands(handsObj) {
@@ -730,7 +765,6 @@
     await aiDrawDecision(playerIdx);
     
     // Future steps will go here (lay down, play, discard)
-    // For now, log that we need human to complete or continue with placeholder
     console.log('AI Draw complete. Phase 1 implementation - human must complete turn or extend AI logic');
   }
 
@@ -763,90 +797,214 @@
   }
 
   function evaluateDiscardBenefit(card, hand, playerIdx) {
-    // SIMULATION: Would taking this card improve the hand?
+    const player = players[playerIdx];
+    const contractCards = subcontractCards[player] || [];
+    const playerDiv = document.getElementById(`player-${playerIdx}`);
+    const hasLaidDown = playerDiv?.classList.contains('HasLaidDown') || false;
     
-    // Test 1: Does it complete the contract immediately?
-    const simulatedHand = [...hand, card];
-    if (canCompleteContract(simulatedHand, roundIndex)) {
-      console.log('  -> Completes contract!');
+    // Get current contract requirements
+    const requiredSetsRuns = getContractRequirements(roundIndex);
+    
+    // Analyze what we already have in contract vs what's needed
+    const contractStatus = analyzeContractStatus(contractCards, requiredSetsRuns);
+    
+    // HIGHEST PRIORITY: Completes unfulfilled contract requirement
+    if (wouldCompleteContractRequirement(card, contractCards, hand, contractStatus)) {
+      console.log('  -> Completes unfulfilled contract requirement!');
       return true;
     }
     
-    // Test 2: Does it form a valid set with existing cards?
-    const sameRank = hand.filter(c => c.rank === card.rank);
-    if (sameRank.length >= 2) { // Would make 3+ of a kind
-      const testSet = [...sameRank, card];
-      if (isValidSet(testSet)) {
-        console.log('  -> Forms valid set');
-        return true;
-      }
+    // HIGH PRIORITY: Forms new set/run to progress toward laying down
+    if (formsNewSetOrRun(card, hand, contractStatus)) {
+      console.log('  -> Forms new set/run for contract progress');
+      return true;
     }
     
-    // Test 3: Does it extend or complete a potential run?
-    const sameSuit = hand.filter(c => c.suit === card.suit);
-    if (sameSuit.length >= 3) {
-      // Check if card fits in sequence with existing suit cards
-      const testRun = [...sameSuit, card];
-      if (isValidRun(testRun)) {
-        console.log('  -> Forms valid run');
-        return true;
-      }
-      
-      // Check if card extends a near-run (e.g., have 5-6-7, discard is 4 or 8)
-      const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
-      const cardValue = rankValues[card.rank] || 0;
-      const suitRanks = sameSuit.map(c => rankValues[c.rank] || 0).sort((a,b) => a-b);
-      
-      // Check for sequential potential (card is adjacent to existing sequence)
-      for (let i = 0; i < suitRanks.length; i++) {
-        if (Math.abs(suitRanks[i] - cardValue) === 1) {
-          // Card is adjacent to existing card of same suit
-          console.log('  -> Extends potential run');
-          return true;
-        }
-      }
+    // MEDIUM PRIORITY: Can play on other player's contract (only if laid down)
+    if (hasLaidDown && canPlayOnOtherContracts(card, playerIdx)) {
+      console.log('  -> Can play on other player\'s contract');
+      return true;
     }
     
-    // Test 4: Is it a wild card? (Always take)
+    // LOW PRIORITY: Extends already-complete set (4th+ card)
+    if (extendsCompleteSet(card, contractCards)) {
+      console.log('  -> Extends already-complete set (low priority)');
+      // Return false - not worth taking discard for this
+      return false;
+    }
+    
+    // Wild card check
     if (isWild(card)) {
-      console.log('  -> Wild card');
-      return true;
-    }
-    
-    // Test 5: Does it significantly reduce hand point value?
-    // (e.g., replacing a high card or enabling play of high cards)
-    const handValue = calculateHandValue(hand);
-    const simulatedValue = calculateHandValue(simulatedHand);
-    if (simulatedValue < handValue - 10) { // Reduces value by 10+ points
-      console.log('  -> Significantly reduces hand value');
-      return true;
+      console.log('  -> Wild card (flexible but not automatic)');
+      // Only take wild if it helps complete contract
+      if (contractStatus.needsWild) {
+        return true;
+      }
     }
     
     return false;
   }
 
-  function canCompleteContract(hand, roundNum) {
-    // Check if hand can fulfill current round's contract
-    const requiredSets = (roundNum === 1 || roundNum === 4 || roundNum === 5) ? 
-      (roundNum === 4 ? 3 : roundNum === 5 ? 2 : 2) : 0;
-    const requiredRuns = (roundNum === 2 || roundNum === 3 || roundNum === 6 || roundNum === 7) ?
-      (roundNum === 3 ? 2 : roundNum === 6 ? 2 : roundNum === 7 ? 3 : 1) : 0;
-    
-    // This is simplified - full implementation would check all combinations
-    // For now, check if we have enough cards to potentially make the contract
-    return false; // Placeholder - will be refined in Phase 1 full implementation
+  // ADD: Helper to get contract requirements for current round
+  function getContractRequirements(roundNum) {
+    const requirements = {
+      1: { sets: 2, runs: 0 },
+      2: { sets: 1, runs: 1 },
+      3: { sets: 0, runs: 2 },
+      4: { sets: 3, runs: 0 },
+      5: { sets: 2, runs: 1 },
+      6: { sets: 1, runs: 2 },
+      7: { sets: 0, runs: 3 }
+    };
+    return requirements[roundNum] || { sets: 0, runs: 0 };
   }
 
-  function calculateHandValue(hand) {
-    // Sum of point values in hand
-    let value = 0;
-    hand.forEach(card => {
-      if (isWild(card)) value += 20;
-      else if (card.rank === 'A') value += 15;
-      else if (['10', 'J', 'Q', 'K'].includes(card.rank)) value += 10;
-      else if (!isNaN(parseInt(card.rank))) value += parseInt(card.rank);
+  // ADD: Analyze what's complete vs needed in contract
+  function analyzeContractStatus(contractCards, required) {
+    let validSets = 0;
+    let validRuns = 0;
+    let partialSets = []; // Ranks with 2 cards (need 1 more)
+    let partialRuns = []; // Suit sequences that could extend
+    
+    // Group contract cards by sub-area to check validity
+    const subAreas = {};
+    contractCards.forEach(c => {
+      if (!subAreas[c.subArea]) subAreas[c.subArea] = [];
+      subAreas[c.subArea].push(c);
     });
-    return value;
+    
+    Object.values(subAreas).forEach(areaCards => {
+      if (areaCards.length >= 3) {
+        if (isValidSet(areaCards)) validSets++;
+        else if (isValidRun(areaCards)) validRuns++;
+      }
+      // Check for partial sets (2 of same rank)
+      const ranks = {};
+      areaCards.forEach(c => {
+        ranks[c.rank] = (ranks[c.rank] || 0) + 1;
+      });
+      Object.entries(ranks).forEach(([rank, count]) => {
+        if (count === 2) partialSets.push(rank);
+      });
+    });
+    
+    return {
+      validSets,
+      validRuns,
+      partialSets,
+      needsSets: required.sets - validSets,
+      needsRuns: required.runs - validRuns,
+      needsWild: contractCards.length > 0 && contractCards.length < 3 // Rough check
+    };
+  }
+
+  // ADD: Check if card would complete a contract requirement
+  function wouldCompleteContractRequirement(card, contractCards, hand, status) {
+    // Check if it completes a partial set in contract
+    const sameRankInContract = contractCards.filter(c => c.rank === card.rank);
+    if (sameRankInContract.length === 2 && status.needsSets > 0) {
+      // Would make 3 of a kind, completing a set
+      return true;
+    }
+    
+    // Check if it completes a partial run in contract
+    const sameSuitInContract = contractCards.filter(c => c.suit === card.suit);
+    if (sameSuitInContract.length >= 3) {
+      const testRun = [...sameSuitInContract, card];
+      if (isValidRun(testRun) && status.needsRuns > 0) {
+        return true;
+      }
+    }
+    
+    // Check if it completes a set from hand cards + contract
+    const sameRankInHand = hand.filter(c => c.rank === card.rank);
+    const totalSameRank = sameRankInHand.length + sameRankInContract.length;
+    if (totalSameRank >= 2 && status.needsSets > 0) {
+      const testSet = [...sameRankInHand, ...sameRankInContract, card];
+      if (isValidSet(testSet)) return true;
+    }
+    
+    // Check if it completes a run from hand cards + contract
+    const sameSuitInHand = hand.filter(c => c.suit === card.suit);
+    if (sameSuitInHand.length + sameSuitInContract.length >= 3 && status.needsRuns > 0) {
+      const testRun = [...sameSuitInHand, ...sameSuitInContract, card];
+      if (isValidRun(testRun)) return true;
+    }
+    
+    return false;
+  }
+
+  // ADD: Check if card forms new set/run with hand
+  function formsNewSetOrRun(card, hand, status) {
+    // Only count if we still need this type
+    if (status.needsSets > 0) {
+      const sameRank = hand.filter(c => c.rank === card.rank);
+      if (sameRank.length >= 2) {
+        const testSet = [...sameRank, card];
+        if (isValidSet(testSet)) return true;
+      }
+    }
+    
+    if (status.needsRuns > 0) {
+      const sameSuit = hand.filter(c => c.suit === card.suit);
+      if (sameSuit.length >= 3) {
+        const testRun = [...sameSuit, card];
+        if (isValidRun(testRun)) return true;
+      }
+      
+      // Check for potential run extension
+      const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
+      const cardValue = rankValues[card.rank] || 0;
+      const suitRanks = sameSuit.map(c => rankValues[c.rank] || 0).sort((a,b) => a-b);
+      
+      for (let i = 0; i < suitRanks.length; i++) {
+        if (Math.abs(suitRanks[i] - cardValue) === 1) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  // ADD: Check if can play on other players' contracts
+  function canPlayOnOtherContracts(card, playerIdx) {
+    // Check all other players who have laid down
+    for (let i = 0; i < players.length; i++) {
+      if (i === playerIdx) continue;
+      const otherDiv = document.getElementById(`player-${i}`);
+      if (!otherDiv?.classList.contains('HasLaidDown')) continue;
+      
+      const otherPlayer = players[i];
+      const otherContract = subcontractCards[otherPlayer] || [];
+      
+      // Check if card would be valid on their contract
+      // Try adding to existing sets
+      const sameRank = otherContract.filter(c => c.rank === card.rank);
+      if (sameRank.length >= 2) {
+        const testSet = [...sameRank, card];
+        if (isValidSet(testSet)) return true;
+      }
+      
+      // Try extending runs
+      const sameSuit = otherContract.filter(c => c.suit === card.suit);
+      if (sameSuit.length >= 3) {
+        const testRun = [...sameSuit, card];
+        if (isValidRun(testRun)) return true;
+      }
+    }
+    return false;
+  }
+
+  // ADD: Check if extends already-complete set (low priority)
+  function extendsCompleteSet(card, contractCards) {
+    const sameRank = contractCards.filter(c => c.rank === card.rank);
+    // Already have 3+ of this rank (complete set)
+    if (sameRank.length >= 3) {
+      const testSet = [...sameRank, card];
+      if (isValidSet(testSet)) return true;
+    }
+    return false;
   }
 
   async function initTable(playerNames) {
@@ -861,12 +1019,10 @@
       aiData.isAI = setup.isAI || playerNames.map(() => false);
       aiData.difficulties = setup.difficulties || playerNames.map(() => null);
     } catch (e) {
-      // Fallback: assume all human if no AI data
       aiData.isAI = playerNames.map(() => false);
       aiData.difficulties = playerNames.map(() => null);
     }
     
-    // Store AI data globally for access during turns
     window.aiData = aiData;
     
     RoundStarter = Math.floor(Math.random() * players.length);
@@ -935,7 +1091,6 @@
     updatePlayerStats(hands);
     refreshLayButtons();
     
-    // ADD: Check if first player is AI and trigger their turn
     if (window.aiData && window.aiData.isAI[RoundStarter]) {
       setTimeout(() => executeAITurn(RoundStarter, window.aiData.difficulties[RoundStarter]), 1500);
     }
@@ -1007,12 +1162,10 @@
     const newDiv = document.getElementById(`player-${newTurnIdx}`);
     if (newDiv) newDiv.classList.add('MyTurn');
     
-    // ADD: Check if new player is AI
     if (window.aiData && window.aiData.isAI[newTurnIdx]) {
       await showBuyClockPopup();
       setTimeout(() => executeAITurn(newTurnIdx, window.aiData.difficulties[newTurnIdx]), 1000);
     } else {
-      // Human player - show buy clock normally
       await showBuyClockPopup();
     }
     
@@ -1139,7 +1292,6 @@
           buyingState[i] = true;
           buyBtn.textContent = isMyTurn ? 'Taking' : 'Buying';
           buyBtn.classList.add('buying');
-          // CHANGED: Fixed buybtn -> buyBtn typo
           buyBtn.disabled = true;
           if (fastBuy && !clickOrder.includes(i)) clickOrder.push(i);
         }
@@ -1233,6 +1385,22 @@
     const playerIdx = playerDiv ? Number(playerDiv.id.split('-')[1]) : -1;
     if (playerIdx < 0) return;
     if (!playerDiv.classList.contains('MyTurn')) return;
+    
+    // ADD: Check if player has drawn
+    if (!playerDiv.classList.contains('HasDrawn')) {
+      btn.textContent = 'Must Draw First';
+      setTimeout(() => (btn.textContent = 'Lay Down'), 1500);
+      return;
+    }
+    
+    // ADD: Check if player has at least 1 card in hand
+    const hand = hands[players[playerIdx]] || [];
+    if (hand.length === 0) {
+      btn.textContent = 'No Cards to Lay';
+      setTimeout(() => (btn.textContent = 'Lay Down'), 1500);
+      return;
+    }
+    
     const subAreas = getSubcontractSubAreas(playerIdx);
     if (!subAreas.length) return;
     const roundNum = roundIndex;
