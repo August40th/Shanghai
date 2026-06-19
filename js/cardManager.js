@@ -500,14 +500,6 @@
         renderCardArray(hands[myPlayer], myHandDiv, true, myTurnIdx, "hand");
         renderAllSubcontractAreas();
         window.validateLayDown(myTurnIdx);
-        const cardsInArea = flatArr.filter(c => c.subArea === subAreaIdx);
-        cardManager.renderCardArray(
-          cardsInArea,
-          sub.lastChild,  // the container inside the subcontract area div
-          !myHasLaidDown,
-          myTurnIdx,
-          'subcontract'
-        );
       };
     });
   
@@ -570,7 +562,6 @@
           if (allowWildSwap && wildIndices.length > 0) {
             // Try each wild card for swap
             for (const wildIdx of wildIndices) {
-              if (isWild(data.card) && isWild(subAreaCards[wildIdx])) continue;
               const wildCard = subAreaCards[wildIdx];
               const candidateCards = subAreaCards.slice();
               candidateCards[wildIdx] = data.card;
@@ -639,18 +630,18 @@
           hands[myPlayer].splice(data.originIdx, 1);
           data.card.subArea = subAreaIdx;
           flatArr.splice(globalInsertIdx, 0, data.card);
+
+          // >>>>> END ROUND TRIGGER: Check if this was the player's final card <<<<<
+          const isFinalCard = hands[myPlayer].length === 0;
   
           renderCardArray(hands[myPlayer], myHandDiv, true, myTurnIdx, "hand");
           renderAllSubcontractAreas();
           window.validateLayDown(myTurnIdx);
-          const cardsInArea = flatArr.filter(c => c.subArea === subAreaIdx);
-          cardManager.renderCardArray(
-            cardsInArea,
-            sub.lastChild,  // the container inside the subcontract area div
-            !myHasLaidDown,
-            myTurnIdx,
-            'subcontract'
-          );
+
+          // >>>>> END ROUND TRIGGER: If final card, end the round <<<<<
+          if (isFinalCard && typeof window.endRound === "function") {
+            window.endRound(myTurnIdx);
+          }
         };
       });
     });
@@ -707,8 +698,7 @@
       window.drawCardFrom("discard", playerIdx);
     };
   }
-
-
+  
   function renderAllSubcontractAreas() {
     const myTurnIdx = players.findIndex((_, i) => checkPlayerIsMyTurn(i));
     if (myTurnIdx === -1) return;
