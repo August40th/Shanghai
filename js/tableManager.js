@@ -30,8 +30,13 @@
   let Hardwindow = false;
 
   const roundContracts = [
-    "2 Sets", "1 Set + 1 Run", "2 Runs", "3 Sets",
-    "2 Sets + 1 Run", "1 Set + 2 Runs", "3 Runs"
+    "2 Sets",
+    "1 Set + 1 Run",
+    "2 Runs",
+    "3 Sets",
+    "2 Sets + 1 Run",
+    "1 Set + 2 Runs",
+    "3 Runs"
   ];
   
   const CONTRACT_SUB_AREAS = {
@@ -44,9 +49,6 @@
     7: ['Run 1', 'Run 2', 'Run 3']
   };
   
-  // ADD: Flag to track if score popup is open
-  let scorePopupOpen = false;
-  
   function getMyTurnPlayerIndex() {
     return players.findIndex((_, i) => {
       const el = document.getElementById(`player-${i}`);
@@ -57,73 +59,107 @@
   function isWild(card) {
     const rules = window.gameRules || {};
     if (!rules.wildsEnabled) return false;
+  
     const type = (rules.wildType || 'classic').toLowerCase();
-    if (type === 'classic') return card.rank === '3' && (card.suit === '♦' || card.suit === '♥');
-    if (type === 'extra') return card.rank === '3' && (card.suit === '♦' || card.suit === '♥' || card.suit === '★');
-    if (type === 'joker') return card.rank === 'W';
+  
+    if (type === 'classic')
+      return card.rank === '3' && (card.suit === '♦' || card.suit === '♥');
+  
+    if (type === 'extra')
+      return (
+        card.rank === '3' &&
+        (card.suit === '♦' || card.suit === '♥' || card.suit === '★')
+      );
+  
+    if (type === 'joker')
+      return card.rank === 'W';
+  
     return false;
   }
   
   function isValidSet(cards) {
-    const wildCnt = cards.filter(isWild).length;
-    const nonWild = cards.filter(c => !isWild(c));
+    const wildCnt   = cards.filter(isWild).length;
+    const nonWild   = cards.filter(c => !isWild(c));
+  
     if (nonWild.length === 0) return wildCnt >= 3;
+  
     const distinctRanks = [...new Set(nonWild.map(c => c.rank))];
+  
     if (distinctRanks.length > 1) return false;
+  
     const needed = Math.max(0, 3 - nonWild.length);
     return wildCnt >= needed;
   }
   
   function isValidRun(cards) {
-    const wildCnt = cards.filter(isWild).length;
-    const nonWild = cards.filter(c => !isWild(c));
+    const wildCnt   = cards.filter(isWild).length;
+    const nonWild   = cards.filter(c => !isWild(c));
+  
     const totalLen = nonWild.length + wildCnt;
     if (totalLen < 4) return false;
+  
     if (nonWild.length === 0) return wildCnt >= 4;
+  
     const distinctSuits = [...new Set(nonWild.map(c => c.suit))];
     if (distinctSuits.length > 1) return false;
     const runSuit = distinctSuits[0];
-    const wrapAround = window.gameRules?.wrapAround ?? false;
-    let extendedRankOrder = rankOrder;
     
-    if (wrapAround) {
-      extendedRankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K','A','2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-      const maxStart = extendedRankOrder.length - totalLen;
-      const matchesSequence = (seq) => {
-        let usedWilds = 0;
-        for (let i = 0; i < cards.length; ++i) {
-          const card = cards[i];
-          if (isWild(card)) { usedWilds++; continue; }
-          if (card.rank !== seq[i] || card.suit !== runSuit) return false;
+      const wrapAround = window.gameRules?.wrapAround ?? false;
+      let extendedRankOrder = rankOrder;
+      if (wrapAround) {
+        extendedRankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K','A','2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+        const maxStart = extendedRankOrder.length - totalLen;
+  
+        const matchesSequence = (seq) => {
+          let usedWilds = 0;
+          for (let i = 0; i < cards.length; ++i) {
+            const card = cards[i];
+            if (isWild(card)) {
+              usedWilds++;
+              continue;
+            }
+            if (card.rank !== seq[i] || card.suit !== runSuit) return false;
+          }
+          return usedWilds <= wildCnt;
+        };
+      
+        for (let start = 0; start <= maxStart; ++start) {
+          const ascSeq = extendedRankOrder.slice(start, start + totalLen);
+          if (matchesSequence(ascSeq)) return true;
+      
+          const descSeq = [...ascSeq].reverse();
+          if (matchesSequence(descSeq)) return true;
         }
-        return usedWilds <= wildCnt;
-      };
-      for (let start = 0; start <= maxStart; ++start) {
-        const ascSeq = extendedRankOrder.slice(start, start + totalLen);
-        if (matchesSequence(ascSeq)) return true;
-        const descSeq = [...ascSeq].reverse();
-        if (matchesSequence(descSeq)) return true;
+        return false;
       }
-      return false;
-    }
-
+  
     const maxStart = rankOrder.length - totalLen;
+  
     const matchesSequence = (seq) => {
       let usedWilds = 0;
+  
       for (let i = 0; i < cards.length; ++i) {
         const card = cards[i];
-        if (isWild(card)) { usedWilds++; continue; }
+  
+        if (isWild(card)) {
+          usedWilds++;
+          continue;
+        }
+  
         if (card.rank !== seq[i] || card.suit !== runSuit) return false;
       }
+  
       return usedWilds <= wildCnt;
     };
-
+  
     for (let start = 0; start <= maxStart; ++start) {
       const ascSeq = rankOrder.slice(start, start + totalLen);
       if (matchesSequence(ascSeq)) return true;
+  
       const descSeq = [...ascSeq].reverse();
       if (matchesSequence(descSeq)) return true;
     }
+  
     return false;
   }
   window.isValidSet = isValidSet;
@@ -134,38 +170,78 @@
     const subAreas = getSubcontractSubAreas(playerIdx);
     const roundNum = roundIndex;
     const expectedLabelst = CONTRACT_SUB_AREAS[roundNum] || [];
+  
     subAreas.forEach(sa => (sa.style.backgroundColor = '#fff'));
+  
     subAreas.forEach((sub, areaIdx) => {
       const label = sub.dataset.label || '';
-      const cardsInArea = (subcontractCards[player] || []).filter(c => c.subArea === areaIdx);
+      const cardsInArea = (subcontractCards[player] || []).filter(
+        c => c.subArea === areaIdx
+      );
+  
       let ok = false;
       if (label.toLowerCase().includes('set')) ok = isValidSet(cardsInArea);
       else if (label.toLowerCase().includes('run')) ok = isValidRun(cardsInArea);
+      
       sub.style.backgroundColor = ok ? '#c8e6c9' : '#fff';
     });
   }
   
   function populateContractSubAreas(roundNum) {
     const labels = CONTRACT_SUB_AREAS[roundNum] || [];
+
     contracts.forEach((contractDiv, i) => {
       if (!contractDiv) return;
+
       contractDiv.innerHTML = '';
+
       const wrapper = document.createElement('div');
-      wrapper.style.cssText = 'display:flex;flex-direction:row;flex-wrap:nowrap;gap:8px;padding:4px;border:1px dashed ' + backColors.outline + ';border-radius:6px;min-width:0;';
+      wrapper.style.display = 'flex';
+      wrapper.style.flexDirection = 'row';
+      wrapper.style.flexWrap = 'nowrap';
+      wrapper.style.gap = '8px';
+      wrapper.style.padding = '4px';
+      wrapper.style.border = `1px dashed ${backColors.outline}`;
+      wrapper.style.borderRadius = '6px';
+      wrapper.style.minWidth = '0';
       contractDiv.appendChild(wrapper);
+
       labels.forEach(label => {
         const sub = document.createElement('div');
         sub.className = 'contract-subarea';
         sub.dataset.label = label;
         sub.dataset.playerIndex = i;
-        sub.dataset.myTurn = (players[i] && document.getElementById(`player-${i}`).classList.contains('MyTurn')) ? 'true' : 'false';
-        sub.style.cssText = 'flex:0 0 auto;flex-shrink:0;max-width:none;min-width:0;padding:2px;border-radius:4px;border:1px solid #000;background-color:#fff;display:flex;align-items:center;justify-content:space-between;font-size:0.85rem;font-weight:500;box-sizing:border-box;min-height:75px;user-select:none;';
+
+        sub.dataset.myTurn = (players[i] &&
+          document.getElementById(`player-${i}`).classList.contains('MyTurn'))
+          ? 'true' : 'false';
+
+        sub.style.flex = '0 0 auto';
+        sub.style.flexShrink = '0'; 
+        sub.style.maxWidth = 'none';
+        sub.style.minWidth = '0';
+
+        sub.style.padding = '2px';
+        sub.style.borderRadius = '4px';
+        sub.style.border = '1px solid #000';
+        sub.style.backgroundColor = '#fff';
+        sub.style.display = 'flex';
+        sub.style.alignItems = 'center';
+        sub.style.justifyContent = 'space-between';
+        sub.style.fontSize = '0.85rem';
+        sub.style.fontWeight = '500';
+        sub.style.boxSizing = 'border-box';
+        sub.style.minHeight = '75px';
+        sub.style.userSelect = 'none';
+
         const lbl = document.createElement('span');
         lbl.textContent = label;
         sub.appendChild(lbl);
+
         const placeholder = document.createElement('span');
         placeholder.textContent = '';
         sub.appendChild(placeholder);
+
         wrapper.appendChild(sub);
       });
     });
@@ -179,7 +255,11 @@
       if (i === -1) continue;
       const k = pair.substring(0, i);
       if (k === name) {
-        try { return decodeURIComponent(pair.substring(i + 1)); } catch { return pair.substring(i + 1); }
+        try {
+          return decodeURIComponent(pair.substring(i + 1));
+        } catch {
+          return pair.substring(i + 1);
+        }
       }
     }
     return null;
@@ -213,28 +293,51 @@
     };
   }
   function setDefaultBackColors() {
-    backColors = { center: '#f9d71c', edge1: '#e39e13', edge2: '#cf7518', edge3: '#a05108', outline: '#3a2e01', edgeWidth: 6 };
+    backColors = {
+      center: '#f9d71c',
+      edge1: '#e39e13',
+      edge2: '#cf7518',
+      edge3: '#a05108',
+      outline: '#3a2e01',
+      edgeWidth: 6
+    };
   }
 
   function loadCustomization() {
     try {
       const ccStr = getCookie('cardCustom');
-      if (!ccStr) { setDefaultSuitColors(); setDefaultBackColors(); return; }
+      if (!ccStr) {
+        setDefaultSuitColors();
+        setDefaultBackColors();
+        return;
+      }
       const cc = JSON.parse(ccStr);
+
       if (cc.suitColors) {
         suitColors = {};
         for (let key in cc.suitColors) {
           if (!Object.prototype.hasOwnProperty.call(cc.suitColors, key)) continue;
           const entry = cc.suitColors[key];
-          suitColors[key] = { symbol: entry.symbol || 'white', background: entry.background || '#bbb', outline: entry.outline || 'green' };
+          suitColors[key] = {
+            symbol: entry.symbol || 'white',
+            background: entry.background || '#bbb',
+            outline: entry.outline || 'green'
+          };
         }
-      } else { setDefaultSuitColors(); }
+      } else {
+        setDefaultSuitColors();
+      }
+
       if (cc.backColors) {
         backColors = Object.assign({}, backColors, cc.backColors);
-        backColors.edgeWidth = safeNumber(backColors.edgeWidth, 6);
-      } else { setDefaultBackColors(); }
+        backColors.edgeWidth = safeNumber(backColors.edgeWidth, backColors.edgeWidth);
+      } else {
+        setDefaultBackColors();
+      }
+
       suitSize = safeNumber(cc.suitSize, 90);
       rankSize = safeNumber(cc.rankSize, 65);
+
     } catch (e) {
       console.warn("Failed to parse cardCustom cookie", e);
       setDefaultSuitColors();
@@ -247,7 +350,9 @@
       const crStr = getCookie('customRules');
       if (!crStr) return {};
       return JSON.parse(crStr);
-    } catch { return {}; }
+    } catch {
+      return {};
+    }
   }
 
   function createPlayers(playerNames) {
@@ -255,60 +360,86 @@
     contracts = new Array(playerNames.length).fill(null);
     subcontractCards = {};
     playerNames.forEach(p => subcontractCards[p] = []);
+
     for (let i = 0; i < players.length; i++) {
       const playerDiv = document.createElement('div');
       playerDiv.className = 'player';
       playerDiv.id = `player-${i}`;
       playerDiv.style.position = 'absolute';
+
       const nameplate = document.createElement('div');
       nameplate.className = 'nameplate';
       nameplate.textContent = players[i];
+      
       const layBtn = document.createElement('button');
       layBtn.className = 'lay-down-btn';
       layBtn.type = 'button';
       layBtn.textContent = 'Lay Down';
       layBtn.disabled = true;
       layBtn.addEventListener('click', LayDownClick);
+
       const stats = document.createElement('div');
       stats.className = 'stats';
+
       const topRow = document.createElement('div');
-      topRow.style.cssText = 'display:flex;justify-content:space-between;width:100%;';
+      topRow.style.display = 'flex';
+      topRow.style.justifyContent = 'space-between';
+      topRow.style.width = '100%';
+
       const buysDiv = document.createElement('div');
       buysDiv.className = 'stat-buys';
       buysDiv.textContent = 'Buys: 3';
+
       const heldPointsDiv = document.createElement('div');
       heldPointsDiv.className = 'stat-held';
       heldPointsDiv.textContent = 'Held: 0';
+
       topRow.appendChild(buysDiv);
       topRow.appendChild(heldPointsDiv);
+
       const bottomRow = document.createElement('div');
-      bottomRow.style.cssText = 'display:flex;justify-content:space-between;width:100%;';
+      bottomRow.style.display = 'flex';
+      bottomRow.style.justifyContent = 'space-between';
+      bottomRow.style.width = '100%';
+
       const cardsDiv = document.createElement('div');
       cardsDiv.className = 'stat-cards';
       cardsDiv.textContent = 'Cards: 0';
+
       const scoreDiv = document.createElement('div');
       scoreDiv.className = 'stat-score';
       scoreDiv.textContent = 'Score: 0';
+
       bottomRow.appendChild(cardsDiv);
       bottomRow.appendChild(scoreDiv);
+
       stats.appendChild(topRow);
       stats.appendChild(bottomRow);
+
       const handArea = document.createElement('div');
       handArea.className = 'hand-area';
       handArea.id = `hand-${i}`;
-      handArea.style.cssText = 'position:relative;display:flex;align-items:center;margin-top:8px;';
+      handArea.style.position = 'relative';
+      handArea.style.display = 'flex';
+      handArea.style.alignItems = 'center';
+      handArea.style.marginTop = '8px';
+
       const _handStyle = document.createElement('style');
       _handStyle.textContent = `.hand-area{min-width:40px;}`;
       document.head.appendChild(_handStyle);
+
       playerDiv.appendChild(nameplate);
       playerDiv.appendChild(layBtn); 
       playerDiv.appendChild(stats);
       playerDiv.appendChild(handArea);
+
       if (playersContainer) playersContainer.appendChild(playerDiv);
+
       const contractDiv = document.createElement('div');
       contractDiv.className = 'contract-area';
       contractDiv.id = `contract-${i}`;
-      contractDiv.style.cssText = 'display:inline-block;white-space:nowrap;';
+      contractDiv.style.display = 'inline-block';
+      contractDiv.style.whiteSpace = 'nowrap';
       if (contractsContainer) contractsContainer.appendChild(contractDiv);
       contracts[i] = contractDiv;
     }
@@ -321,12 +452,20 @@
     const spacing = 160;
     const pileWidth = drawPileDiv.offsetWidth || 120;
     const pileHeight = drawPileDiv.offsetHeight || 160;
+
     drawPileDiv.style.left = (centerX - spacing / 2 - pileWidth / 2) + "px";
     drawPileDiv.style.top = (centerY - pileHeight / 2) + "px";
     discardPileDiv.style.left = (centerX + spacing / 2 - pileWidth / 2) + "px";
     discardPileDiv.style.top = (centerY - pileHeight / 2) + "px";
+
     const c = backColors;
-    const grad = `radial-gradient(circle at center,${c.center} 0%,${c.edge1} 25%,${c.edge2} 50%,${c.edge3} 75%,${c.edge3} 80%)`;
+    const grad = `radial-gradient(circle at center,
+      ${c.center} 0%,
+      ${c.edge1} 25%,
+      ${c.edge2} 50%,
+      ${c.edge3} 75%,
+      ${c.edge3} 80%
+    )`;
     [drawPileDiv].forEach(pile => {
       if (!pile) return;
       pile.style.background = grad;
@@ -340,16 +479,23 @@
   }
 
   function drawCardFrom(source, playerIdx) {
-    if (playerIdx === undefined) playerIdx = getMyTurnPlayerIndex();
+    if (playerIdx === undefined) {
+      playerIdx = getMyTurnPlayerIndex();
+    }
     if (playerIdx < 0) return;
+
     if (hasDrawn && playerIdx === getMyTurnPlayerIndex()) return;
+
     let card = null;
+
     if (source === 'draw') {
       if (drawPile && drawPile.length === 1) {
         if (window.initDeckInstance && typeof window.initDeckInstance.reshuffle === 'function') {
           const result = window.initDeckInstance.reshuffle(drawPile, discardPile);
           drawPile = result.drawPile;
           discardPile = result.discardPile;
+        } else {
+          console.warn("Fallback shuffle");
         }
       }
       if (drawPile.length === 0) return;
@@ -358,23 +504,31 @@
       if (discardPile.length === 0) return;
       card = discardPile.pop();
     }
+
     if (!card) return;
+
     hands[players[playerIdx]].push(card);
+
     if (playerIdx === getMyTurnPlayerIndex()) {
       hasDrawn = true;
       window.hasDrawn = true;
       const playerDiv = document.getElementById(`player-${playerIdx}`);
       if (playerDiv) playerDiv.classList.add('HasDrawn');
     }
+
     cardManager.setupDragDrop();
     renderHands(hands);
-    if (source === 'discard') cardManager.renderDiscardPile();
+
+    if (source === 'discard') {
+      cardManager.renderDiscardPile();
+    }
   }
   window.drawCardFrom = drawCardFrom;
 
   function calculateCardPoints(card, wildCardsEnabled, wildType) {
     const rank = card.rank;
     const suit = card.suit;
+
     function isWildCard() {
       if (!wildCardsEnabled) return false;
       if (wildType === 'classic') return (rank === '3' && (suit === '♦' || suit === '♥'));
@@ -403,23 +557,34 @@
         wildType = (cr.wildType || 'classic').toLowerCase();
       }
     } catch {}
+  
     players.forEach((player, i) => {
       const hand = handsObj[player] || [];
       const playerDiv = document.getElementById(`player-${i}`);
       if (!playerDiv) return;
       const stats = playerDiv.querySelector('.stats');
       if (!stats) return;
+  
       const hasLaidDown = playerDiv.classList.contains('HasLaidDown');
+  
       const subcontract = subcontractCards[player] || [];
       const cardsForStats = hasLaidDown ? hand : hand.concat(subcontract);
+  
       let heldPoints = 0;
-      cardsForStats.forEach(card => { heldPoints += calculateCardPoints(card, wildCardsEnabled, wildType); });
+      cardsForStats.forEach(card => {
+        heldPoints += calculateCardPoints(card, wildCardsEnabled, wildType);
+      });
+  
       const heldPointsDiv = stats.querySelector('.stat-held');
       if (heldPointsDiv) heldPointsDiv.textContent = `Held: ${heldPoints}`;
+  
       const cardsDiv = stats.querySelector('.stat-cards');
       if (cardsDiv) cardsDiv.textContent = `Cards: ${cardsForStats.length}`;
+
       const stillMyTurn = playerDiv.classList.contains('MyTurn');
-      if (cardsForStats.length === 0) endRound(player);
+      if (cardsForStats.length === 0) {
+          endRound(player);
+          }
     });
   }
   
@@ -431,40 +596,75 @@
       const playerDiv = document.getElementById(`player-${i}`);
       const stats = playerDiv?.querySelector('.stats');
       if (!stats) return;
-      const heldDiv = stats.querySelector('.stat-held');
+  
+      const heldDiv  = stats.querySelector('.stat-held');
       const scoreDiv = stats.querySelector('.stat-score');
       const buysDiv = playerDiv.querySelector('.stat-buys');
-      if (buysDiv) buysDiv.textContent = 'Buys: 3';
-      let heldVal = heldDiv ? Number(heldDiv.textContent.split(':')[1].trim()) : 0;
-      if (window.gameRules.finalShanghai && Hardwindow && roundIndex === 7 && heldVal > 0) heldVal += 100;
-      else if (Hardwindow && heldVal > 0) heldVal += 50;
-      else if (Softwindow && heldVal > 0) heldVal += 25;
-      let scoreVal = scoreDiv ? Number(scoreDiv.textContent.split(':')[1].trim()) : 0;
+      if (buysDiv) {
+        buysDiv.textContent = 'Buys: 3';
+      }
+      let heldVal = heldDiv
+        ? Number(heldDiv.textContent.split(':')[1].trim())
+        : 0
+      if (window.gameRules.finalShanghai && Hardwindow && roundIndex === 7 && heldVal > 0) {
+        heldVal += 100;
+      } else if (Hardwindow && heldVal > 0) {
+        heldVal += 50;
+      } else if (Softwindow && heldVal > 0) {
+        heldVal += 25;
+      }
+  
+      let scoreVal = scoreDiv
+        ? Number(scoreDiv.textContent.split(':')[1].trim())
+        : 0;
+  
       scoreVal = scoreVal + heldVal;
-      if (scoreDiv) scoreDiv.textContent = `Score: ${scoreVal}`;
+  
+      if (scoreDiv) {
+        scoreDiv.textContent = `Score: ${scoreVal}`;
+      }
+  
       roundScores.push(heldVal);
     });
-    roundHistory.push({ round: roundIndex, scores: roundScores });
+  
+    roundHistory.push({
+      round: roundIndex,
+      scores: roundScores
+    });
+  
     const roundWinnerPopup = document.createElement('div');
     roundWinnerPopup.className = 'round-winner-popup';
-    if (Hardwindow && roundIndex === 7) roundWinnerPopup.textContent = `${triggerPlayer} won the FINAL Round with a Shanghai! +100 points to everyone else!`;
-    else if (Hardwindow) roundWinnerPopup.textContent = `${triggerPlayer} won the Round with a Shanghai! +50 points to everyone else!`;
-    else if (Softwindow) roundWinnerPopup.textContent = `${triggerPlayer} won the Round with a Soft Shanghai! +25 points to everyone else!`;
-    else roundWinnerPopup.textContent = `${triggerPlayer} won the Round!`;
+    if (Hardwindow && roundIndex === 7){
+      roundWinnerPopup.textContent = `${triggerPlayer} won the FINAL Round with a Shanghai! +100 points to everyone else!`;
+    } else if (Hardwindow) {
+        roundWinnerPopup.textContent = `${triggerPlayer} won the Round with a Shanghai! +50 points to everyone else!`;
+    } else if (Softwindow) {
+          roundWinnerPopup.textContent = `${triggerPlayer} won the Round with a Soft Shanghai! +25 points to everyone else!`;
+    } else {
+          roundWinnerPopup.textContent = `${triggerPlayer} won the Round!`;
+    }
     document.body.appendChild(roundWinnerPopup);
+  
     const closeRoundWinner = () => {
       roundWinnerPopup.removeEventListener('click', closeRoundWinner);
       window.removeEventListener('keydown', closeRoundWinner);
       roundWinnerPopup.remove();
       showScoresPopup();
-      // Note: startNextRound is now called from scores popup close
+      if (roundIndex >= 7) {
+        showGameWinnerPopup();
+      } else {
+        startNextRound();
+      }
     };
+  
     roundWinnerPopup.addEventListener('click', closeRoundWinner);
     window.addEventListener('keydown', closeRoundWinner);
   }
   
+  // Expose endRound to window for cardManager to call
+  window.endRound = endRound;
+  
   function showScoresPopup() {
-    scorePopupOpen = true; // ADD: Set flag
     let container = document.getElementById('scores-popup');
     if (!container) {
       container = document.createElement('div');
@@ -472,50 +672,61 @@
       container.className = 'scores-popup';
       document.body.appendChild(container);
     }
+    
     let title = container.querySelector('.scores-title');
     if (!title) {
       title = document.createElement('div');
       title.className = 'scores-title';
       title.textContent = 'Player Scores';
-      title.style.cssText = 'text-align:center;font-weight:bold;margin-bottom:8px;';
+      title.style.textAlign = 'center';
+      title.style.fontWeight = 'bold';
+      title.style.marginBottom = '8px';
       container.prepend(title);
     }
+    
     let header = container.querySelector('.scores-header');
     if (!header) {
       header = document.createElement('div');
       header.className = 'scores-header';
-      header.innerHTML = `<div class="cell corner"></div>` + players.map(p => `<div class="cell player-name">${p}</div>`).join('');
+      const headerHTML =
+        `<div class="cell corner"></div>` +
+        players.map(p => `<div class="cell player-name">${p}</div>`).join('');
+      header.innerHTML = headerHTML;
       container.appendChild(header);
     }
+  
     [...container.querySelectorAll('.scores-row')].forEach(row => row.remove());
     const totalRow = container.querySelector('.scores-total-row');
     if (totalRow) totalRow.remove();
+  
     roundHistory.forEach(rh => {
       const row = document.createElement('div');
       row.className = 'scores-row';
-      row.innerHTML = `<div class="cell round-index">Round ${rh.round}</div>` + rh.scores.map(score => `<div class="cell score">${score}</div>`).join('');
+  
+      const roundCell = `<div class="cell round-index">Round ${rh.round}</div>`;
+      const scoreCells = rh.scores.map(score => `<div class="cell score">${score}</div>`).join('');
+      
+      row.innerHTML = roundCell + scoreCells;
       container.appendChild(row);
     });
-    const totals = players.map((_, i) => roundHistory.reduce((sum, rh) => sum + (rh.scores[i] || 0), 0));
-    const totalHTML = `<div class="cell round-index">Total</div>` + totals.map(totalScore => `<div class="cell score">${totalScore}</div>`).join('');
+  
+    const totals = players.map((_, i) => {
+      return roundHistory.reduce((sum, rh) => sum + (rh.scores[i] || 0), 0);
+    });
+  
+    const totalLabel = `<div class="cell round-index">Total</div>`;
+    const totalCells = totals.map(totalScore => `<div class="cell score">${totalScore}</div>`).join('');
+    const totalHTML = totalLabel + totalCells;
+  
     const newTotalRow = document.createElement('div');
     newTotalRow.className = 'scores-row scores-total-row';
     newTotalRow.innerHTML = totalHTML;
     container.appendChild(newTotalRow);
-    
-    // ADD: Modified close handler to deal next round after close
+  
     const close = () => {
       container.removeEventListener('click', close);
       window.removeEventListener('keydown', close);
       container.remove();
-      scorePopupOpen = false; // Clear flag
-      
-      // ADD: Start next round after score popup closes
-      if (roundIndex < 7) {
-        startNextRound();
-      } else {
-        showGameWinnerPopup();
-      }
     };
     container.addEventListener('click', close);
     window.addEventListener('keydown', close);
@@ -532,18 +743,24 @@
       });
       return sum;
     });
+  
     const minScore = Math.min(...totals);
     const winners = players.filter((_, i) => totals[i] === minScore);
     const winnerName = winners.length === 1 ? winners[0] : winners.join(', ');
+  
     const rows = document.querySelectorAll('#scores-popup .scores-row');
     rows.forEach(r => {
       const cells = r.querySelectorAll('.cell.score');
-      cells.forEach((c, idx) => { if (totals[idx] === minScore) c.classList.add('lowest-score'); });
+      cells.forEach((c, idx) => {
+        if (totals[idx] === minScore) c.classList.add('lowest-score');
+      });
     });
+  
     const finalPopup = document.createElement('div');
     finalPopup.className = 'game-winner-popup';
     finalPopup.textContent = `${winnerName} won the game!`;
     document.body.appendChild(finalPopup);
+  
     const closeFinal = () => {
       finalPopup.removeEventListener('click', closeFinal);
       window.removeEventListener('keydown', closeFinal);
@@ -554,23 +771,20 @@
   }
   
   async function startNextRound() {
-    // ADD: Check if score popup is still open, wait if so
-    if (scorePopupOpen) {
-      console.log('Waiting for score popup to close before dealing next round...');
-      await waitForScorePopupClose();
-    }
-    
     roundFinished = false; 
     Softwindow = false;  
     Hardwindow = false;  
     roundIndex++;
-    // REMOVED: showRoundPopup call - will handle after score popup in endRound
-    
+    await showRoundPopup(roundIndex);
     const allCards = [];
+    
     players.forEach((_, i) => {
       const playerDiv = document.getElementById(`player-${i}`);
-      if (playerDiv) playerDiv.classList.remove('MyTurn', 'HasDrawn', 'HasLaidDown');
+      if (playerDiv) {
+        playerDiv.classList.remove('MyTurn', 'HasDrawn', 'HasLaidDown');
+      }
     });
+  
     players.forEach((p) => {
       const hand = hands[p] || [];
       allCards.push(...hand);
@@ -580,11 +794,26 @@
       subcontractCards[p] = [];
     });
     hasDrawn = false;
-    if (drawPile && drawPile.length) { allCards.push(...drawPile); drawPile = []; }
-    if (discardPile && discardPile.length) { allCards.push(...discardPile); discardPile.length = 0; }
-    if (window.initDeckInstance && typeof window.initDeckInstance.shuffle === 'function') drawPile = window.initDeckInstance.shuffle(allCards);
+    
+    if (drawPile && drawPile.length) {
+    allCards.push(...drawPile);
+    drawPile = [];
+  }
+  
+    if (discardPile && discardPile.length) {
+      allCards.push(...discardPile);
+      discardPile.length = 0;
+    }
+  
+    if (window.initDeckInstance && typeof window.initDeckInstance.shuffle === 'function') {
+      drawPile = window.initDeckInstance.shuffle(allCards);
+    }
+  
     populateContractSubAreas(roundIndex);
-    if (RoundStarter >= players.length - 1) RoundStarter = -1;
+    
+    if (RoundStarter >= players.length - 1) {
+      RoundStarter = -1;
+    }
     RoundStarter++;
     const firstPlayerDiv = document.getElementById(`player-${RoundStarter}`);
     if (firstPlayerDiv) {
@@ -592,39 +821,25 @@
       firstPlayerDiv.classList.add('MyTurn');
       hasDrawn = false;
     }
+  
     players.forEach(p => {
       const dealt = [];
-      for (let i = 0; i < 10 && drawPile.length; i++) dealt.push(drawPile.pop());
+      for (let i = 0; i < 10 && drawPile.length; i++) {
+        dealt.push(drawPile.pop());
+      }
       hands[p] = dealt;
       subcontractCards[p] = [];
-      if (roundIndex === 1 || roundIndex === 4) hands[p] = sortByRank(hands[p]);
-      else hands[p] = sortBySuitThenRank(hands[p]);
+      if (roundIndex === 1 || roundIndex === 4) {
+        hands[p] = sortByRank(hands[p]);
+      } else {
+        hands[p] = sortBySuitThenRank(hands[p]);
+      }
     });
     cardManager.renderAllSubcontractAreas();
     cardManager.setupDragDrop();
     renderHands(hands);
     cardManager.renderDiscardPile();
     refreshLayButtons();
-    
-    // Show round popup after dealing
-    await showRoundPopup(roundIndex);
-    
-    // Check if first player is AI after dealing
-    if (window.aiData && window.aiData.isAI[RoundStarter]) {
-      setTimeout(() => executeAITurn(RoundStarter, window.aiData.difficulties[RoundStarter]), 1500);
-    }
-  }
-
-  // ADD: Helper to wait for score popup close
-  function waitForScorePopupClose() {
-    return new Promise(resolve => {
-      const checkInterval = setInterval(() => {
-        if (!scorePopupOpen) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-    });
   }
 
   function renderHands(handsObj) {
@@ -632,6 +847,7 @@
       const handArea = document.getElementById(`hand-${i}`);
       if (!handArea) return;
       handArea.innerHTML = '';
+
       const draggable = playerHasMyTurn(i);
       cardManager.renderCardArray(handsObj[players[i]], handArea, draggable, i, 'hand');
     });
@@ -653,8 +869,10 @@
       const popup = document.createElement('div');
       popup.id = 'round-popup';
       popup.classList.add('round-popup');
+  
       const contractText = roundContracts[roundNum - 1] || `Round ${roundNum}: Unknown Contract`;
       popup.textContent = `Round ${roundNum}:\n${contractText}`;
+  
       const lines = popup.textContent.split('\n');
       popup.textContent = '';
       lines.forEach(line => {
@@ -662,7 +880,9 @@
         lineDiv.textContent = line;
         popup.appendChild(lineDiv);
       });
+  
       document.body.appendChild(popup);
+  
       function closePopup() {
         if (popup.parentNode) popup.parentNode.removeChild(popup);
         window.removeEventListener('keydown', onKeyDown);
@@ -671,19 +891,18 @@
       }
       function onKeyDown() { closePopup(); }
       function onClick() { closePopup(); }
+  
       window.addEventListener('keydown', onKeyDown);
       window.addEventListener('click', onClick);
     });
   }
 
-  // RESTORED: Original layoutPlayers function with hardcoded margins
   function layoutPlayers() {
     if (!tableContainer || players.length === 0) return;
 
     const w = tableContainer.clientWidth;
     const h = tableContainer.clientHeight;
 
-    // RESTORED: Original hardcoded margins
     const marginH = 180;
     const marginVTop = 180;
     const marginVBottom = 270;
@@ -691,8 +910,6 @@
     const topLen = Math.max(0, w - 2 * marginH);
     const rightLen = Math.max(0, h - marginVTop - marginVBottom);
     const perimeter = topLen * 2 + rightLen * 2;
-    
-    // RESTORED: Original cornerInset logic
     const cornerInset = players.length >= 8 ? 110 : 90;
 
     players.forEach((_, i) => {
@@ -734,7 +951,6 @@
           break;
       }
 
-      // RESTORED: Original positioning without collision detection
       playerDiv.style.left = `${x}px`;
       playerDiv.style.top = `${y}px`;
 
@@ -751,280 +967,17 @@
     return el?.classList.contains('MyTurn');
   }
 
-  function renderAllSubcontractAreas() { cardManager.renderAllSubcontractAreas(); }
-  function renderDiscardPile() { cardManager.renderDiscardPile(); }
-
-  // ADD: AI Turn Execution Functions
-  async function executeAITurn(playerIdx, difficulty) {
-    console.log(`AI Turn: Player ${playerIdx} (${difficulty})`);
-    
-    const playerDiv = document.getElementById(`player-${playerIdx}`);
-    if (!playerDiv || !playerDiv.classList.contains('MyTurn')) return;
-    
-    // Step 1: Draw decision
-    await aiDrawDecision(playerIdx);
-    
-    // Future steps will go here (lay down, play, discard)
-    console.log('AI Draw complete. Phase 1 implementation - human must complete turn or extend AI logic');
+  function renderAllSubcontractAreas() {
+    cardManager.renderAllSubcontractAreas();
   }
-
-  async function aiDrawDecision(playerIdx) {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const player = players[playerIdx];
-        const hand = hands[player] || [];
-        
-        // Default: draw from draw pile
-        let drawSource = 'draw';
-        
-        // Check if discard pile has card that obviously helps
-        const topDiscard = discardPile[discardPile.length - 1];
-        if (topDiscard) {
-          const discardHelps = evaluateDiscardBenefit(topDiscard, hand, playerIdx);
-          if (discardHelps) {
-            console.log(`AI Player ${playerIdx}: Taking discard ${topDiscard.rank}${topDiscard.suit} - obvious benefit`);
-            drawSource = 'discard';
-          } else {
-            console.log(`AI Player ${playerIdx}: Discard ${topDiscard.rank}${topDiscard.suit} not beneficial, drawing from pile`);
-          }
-        }
-        
-        // Execute the draw
-        window.drawCardFrom(drawSource, playerIdx);
-        resolve();
-      }, 800); // 800ms delay for visibility
-    });
-  }
-
-  function evaluateDiscardBenefit(card, hand, playerIdx) {
-    const player = players[playerIdx];
-    const contractCards = subcontractCards[player] || [];
-    const playerDiv = document.getElementById(`player-${playerIdx}`);
-    const hasLaidDown = playerDiv?.classList.contains('HasLaidDown') || false;
-    
-    // Get current contract requirements
-    const requiredSetsRuns = getContractRequirements(roundIndex);
-    
-    // Analyze what we already have in contract vs what's needed
-    const contractStatus = analyzeContractStatus(contractCards, requiredSetsRuns);
-    
-    // HIGHEST PRIORITY: Completes unfulfilled contract requirement
-    if (wouldCompleteContractRequirement(card, contractCards, hand, contractStatus)) {
-      console.log('  -> Completes unfulfilled contract requirement!');
-      return true;
-    }
-    
-    // HIGH PRIORITY: Forms new set/run to progress toward laying down
-    if (formsNewSetOrRun(card, hand, contractStatus)) {
-      console.log('  -> Forms new set/run for contract progress');
-      return true;
-    }
-    
-    // MEDIUM PRIORITY: Can play on other player's contract (only if laid down)
-    if (hasLaidDown && canPlayOnOtherContracts(card, playerIdx)) {
-      console.log('  -> Can play on other player\'s contract');
-      return true;
-    }
-    
-    // LOW PRIORITY: Extends already-complete set (4th+ card)
-    if (extendsCompleteSet(card, contractCards)) {
-      console.log('  -> Extends already-complete set (low priority)');
-      // Return false - not worth taking discard for this
-      return false;
-    }
-    
-    // Wild card check
-    if (isWild(card)) {
-      console.log('  -> Wild card (flexible but not automatic)');
-      // Only take wild if it helps complete contract
-      if (contractStatus.needsWild) {
-        return true;
-      }
-    }
-    
-    return false;
-  }
-
-  // ADD: Helper to get contract requirements for current round
-  function getContractRequirements(roundNum) {
-    const requirements = {
-      1: { sets: 2, runs: 0 },
-      2: { sets: 1, runs: 1 },
-      3: { sets: 0, runs: 2 },
-      4: { sets: 3, runs: 0 },
-      5: { sets: 2, runs: 1 },
-      6: { sets: 1, runs: 2 },
-      7: { sets: 0, runs: 3 }
-    };
-    return requirements[roundNum] || { sets: 0, runs: 0 };
-  }
-
-  // ADD: Analyze what's complete vs needed in contract
-  function analyzeContractStatus(contractCards, required) {
-    let validSets = 0;
-    let validRuns = 0;
-    let partialSets = []; // Ranks with 2 cards (need 1 more)
-    let partialRuns = []; // Suit sequences that could extend
-    
-    // Group contract cards by sub-area to check validity
-    const subAreas = {};
-    contractCards.forEach(c => {
-      if (!subAreas[c.subArea]) subAreas[c.subArea] = [];
-      subAreas[c.subArea].push(c);
-    });
-    
-    Object.values(subAreas).forEach(areaCards => {
-      if (areaCards.length >= 3) {
-        if (isValidSet(areaCards)) validSets++;
-        else if (isValidRun(areaCards)) validRuns++;
-      }
-      // Check for partial sets (2 of same rank)
-      const ranks = {};
-      areaCards.forEach(c => {
-        ranks[c.rank] = (ranks[c.rank] || 0) + 1;
-      });
-      Object.entries(ranks).forEach(([rank, count]) => {
-        if (count === 2) partialSets.push(rank);
-      });
-    });
-    
-    return {
-      validSets,
-      validRuns,
-      partialSets,
-      needsSets: required.sets - validSets,
-      needsRuns: required.runs - validRuns,
-      needsWild: contractCards.length > 0 && contractCards.length < 3 // Rough check
-    };
-  }
-
-  // ADD: Check if card would complete a contract requirement
-  function wouldCompleteContractRequirement(card, contractCards, hand, status) {
-    // Check if it completes a partial set in contract
-    const sameRankInContract = contractCards.filter(c => c.rank === card.rank);
-    if (sameRankInContract.length === 2 && status.needsSets > 0) {
-      // Would make 3 of a kind, completing a set
-      return true;
-    }
-    
-    // Check if it completes a partial run in contract
-    const sameSuitInContract = contractCards.filter(c => c.suit === card.suit);
-    if (sameSuitInContract.length >= 3) {
-      const testRun = [...sameSuitInContract, card];
-      if (isValidRun(testRun) && status.needsRuns > 0) {
-        return true;
-      }
-    }
-    
-    // Check if it completes a set from hand cards + contract
-    const sameRankInHand = hand.filter(c => c.rank === card.rank);
-    const totalSameRank = sameRankInHand.length + sameRankInContract.length;
-    if (totalSameRank >= 2 && status.needsSets > 0) {
-      const testSet = [...sameRankInHand, ...sameRankInContract, card];
-      if (isValidSet(testSet)) return true;
-    }
-    
-    // Check if it completes a run from hand cards + contract
-    const sameSuitInHand = hand.filter(c => c.suit === card.suit);
-    if (sameSuitInHand.length + sameSuitInContract.length >= 3 && status.needsRuns > 0) {
-      const testRun = [...sameSuitInHand, ...sameSuitInContract, card];
-      if (isValidRun(testRun)) return true;
-    }
-    
-    return false;
-  }
-
-  // ADD: Check if card forms new set/run with hand
-  function formsNewSetOrRun(card, hand, status) {
-    // Only count if we still need this type
-    if (status.needsSets > 0) {
-      const sameRank = hand.filter(c => c.rank === card.rank);
-      if (sameRank.length >= 2) {
-        const testSet = [...sameRank, card];
-        if (isValidSet(testSet)) return true;
-      }
-    }
-    
-    if (status.needsRuns > 0) {
-      const sameSuit = hand.filter(c => c.suit === card.suit);
-      if (sameSuit.length >= 3) {
-        const testRun = [...sameSuit, card];
-        if (isValidRun(testRun)) return true;
-      }
-      
-      // Check for potential run extension
-      const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
-      const cardValue = rankValues[card.rank] || 0;
-      const suitRanks = sameSuit.map(c => rankValues[c.rank] || 0).sort((a,b) => a-b);
-      
-      for (let i = 0; i < suitRanks.length; i++) {
-        if (Math.abs(suitRanks[i] - cardValue) === 1) {
-          return true;
-        }
-      }
-    }
-    
-    return false;
-  }
-
-  // ADD: Check if can play on other players' contracts
-  function canPlayOnOtherContracts(card, playerIdx) {
-    // Check all other players who have laid down
-    for (let i = 0; i < players.length; i++) {
-      if (i === playerIdx) continue;
-      const otherDiv = document.getElementById(`player-${i}`);
-      if (!otherDiv?.classList.contains('HasLaidDown')) continue;
-      
-      const otherPlayer = players[i];
-      const otherContract = subcontractCards[otherPlayer] || [];
-      
-      // Check if card would be valid on their contract
-      // Try adding to existing sets
-      const sameRank = otherContract.filter(c => c.rank === card.rank);
-      if (sameRank.length >= 2) {
-        const testSet = [...sameRank, card];
-        if (isValidSet(testSet)) return true;
-      }
-      
-      // Try extending runs
-      const sameSuit = otherContract.filter(c => c.suit === card.suit);
-      if (sameSuit.length >= 3) {
-        const testRun = [...sameSuit, card];
-        if (isValidRun(testRun)) return true;
-      }
-    }
-    return false;
-  }
-
-  // ADD: Check if extends already-complete set (low priority)
-  function extendsCompleteSet(card, contractCards) {
-    const sameRank = contractCards.filter(c => c.rank === card.rank);
-    // Already have 3+ of this rank (complete set)
-    if (sameRank.length >= 3) {
-      const testSet = [...sameRank, card];
-      if (isValidSet(testSet)) return true;
-    }
-    return false;
+  function renderDiscardPile() {
+    cardManager.renderDiscardPile();
   }
 
   async function initTable(playerNames) {
     loadCustomization();
     createPlayers(playerNames);
-    
-    // ADD: Retrieve AI data from localStorage
-    const gs = localStorage.getItem('gameSetup');
-    let aiData = { isAI: [], difficulties: [] };
-    try {
-      const setup = JSON.parse(gs);
-      aiData.isAI = setup.isAI || playerNames.map(() => false);
-      aiData.difficulties = setup.difficulties || playerNames.map(() => null);
-    } catch (e) {
-      aiData.isAI = playerNames.map(() => false);
-      aiData.difficulties = playerNames.map(() => null);
-    }
-    
-    window.aiData = aiData;
-    
+
     RoundStarter = Math.floor(Math.random() * players.length);
     const firstPlayerDiv = document.getElementById(`player-${RoundStarter}`);
     if (firstPlayerDiv) {
@@ -1033,7 +986,9 @@
       hasDrawn = false;
       window.hasDrawn = false;
     }
+
     const customRules = loadRules();
+
     window.gameRules = {
       extraDeck: customRules.extraDeckChk ? 1 : 0,
       extraSuit: customRules.extraSuitChk ?? false,
@@ -1044,43 +999,64 @@
       hardShanghai: customRules.hardShanghaiChk,
       finalShanghai: customRules.finalShanghaiChk
     };
+
     try {
       if (typeof window.initDeck === 'function') {
         const deck = new window.initDeck();
         window.initDeckInstance = deck;
+
         drawPile = deck.createDeck(playerNames.length);
         hands = deck.dealCards(playerNames);
         discardPile = deck.discardPile || [];
+      } else {
+        drawPile = [];
+        hands = {};
       }
     } catch (e) {
       console.error('initDeck error:', e);
       drawPile = [];
       hands = {};
     }
+
     roundIndex++;
+
     await showRoundPopup(roundIndex);
+
     populateContractSubAreas(roundIndex);
+
     layoutPiles();
     if (drawPileDiv) {
       drawPileDiv.style.cursor = 'pointer';
-      drawPileDiv.addEventListener('click', () => { window.drawCardFrom('draw', RoundStarter); });
+      drawPileDiv.addEventListener('click', () => {
+        window.drawCardFrom('draw', RoundStarter);
+      });
     }
     layoutPlayers();
+
     players.forEach(p => {
       subcontractCards[p] = [];
-      if (roundIndex === 1 || roundIndex === 4) hands[p] = sortByRank(hands[p]);
-      else hands[p] = sortBySuitThenRank(hands[p]);
+      if (roundIndex === 1 || roundIndex === 4) {
+        hands[p] = sortByRank(hands[p]);
+      } else {
+        hands[p] = sortBySuitThenRank(hands[p]);
+      }
     });
+
     cardManager.setData({ players, hands, subcontractCards, discardPile, suitColors, backColors, suitSize, rankSize });
+
     cardManager.renderDiscardPile();
+
     players.forEach((p,i) => {
       const handDiv = document.getElementById(`hand-${i}`);
       if (!handDiv) return;
       const draggable = playerHasMyTurn(i);
       cardManager.renderCardArray(hands[p], handDiv, draggable, i, 'hand');
     });
+
     cardManager.renderAllSubcontractAreas();
+
     cardManager.setupDragDrop();
+
     players.forEach((p,i) => {
       const handDiv = document.getElementById(`hand-${i}`);
       if (!handDiv) return;
@@ -1088,46 +1064,64 @@
       cardManager.renderCardArray(hands[p], handDiv, draggable, i, 'hand');
     });
     cardManager.renderAllSubcontractAreas();
+
     updatePlayerStats(hands);
     refreshLayButtons();
-    
-    if (window.aiData && window.aiData.isAI[RoundStarter]) {
-      setTimeout(() => executeAITurn(RoundStarter, window.aiData.difficulties[RoundStarter]), 1500);
-    }
   }
 
   (function setupDynamicHover() {
     const table = document.getElementById('table-container');
     if (!table) return;
+
     const HOVER_CLASS = 'hover‑raise';
+
     const style = document.createElement('style');
-    style.textContent = `.${HOVER_CLASS} { z-index: 9999 !important; }`;
+    style.textContent = `
+      .${HOVER_CLASS} {
+        z-index: 9999 !important;
+      }
+    `;
     document.head.appendChild(style);
+
     table.addEventListener('mouseover', event => {
       const card = event.target.closest('.card');
       if (!card) return;
+
       const playerDiv = card.closest('.player');
       if (!playerDiv?.classList.contains('MyTurn')) return;
       if (card.dataset.dragging === 'true') return;
-      if (!card.dataset.origBorder) card.dataset.origBorder = getComputedStyle(card).border;
+      if (!card.dataset.origBorder) {
+        card.dataset.origBorder = getComputedStyle(card).border;
+      }
+
       card.classList.add(HOVER_CLASS);
+
       const borderColor = getComputedStyle(card).borderColor;
       const rgb = borderColor.match(/\d+/g);
       if (rgb) {
-        const r = 255 - Number(rgb[0]), g = 255 - Number(rgb[1]), b = 255 - Number(rgb[2]);
+        const r = 255 - Number(rgb[0]);
+        const g = 255 - Number(rgb[1]);
+        const b = 255 - Number(rgb[2]);
         const inverted = `rgb(${r},${g},${b})`;
+
         const bw = getComputedStyle(card).borderWidth || '3px';
         const bs = getComputedStyle(card).borderStyle || 'solid';
         card.style.border = `${bw} ${bs} ${inverted}`;
       }
     });
+
     table.addEventListener('mouseout', event => {
       const card = event.target.closest('.card');
       if (!card) return;
+
       const playerDiv = card.closest('.player');
       if (!playerDiv?.classList.contains('MyTurn')) return;
+
       card.classList.remove(HOVER_CLASS);
-      if (card.dataset.origBorder !== undefined) card.style.border = card.dataset.origBorder;
+
+      if (card.dataset.origBorder !== undefined) {
+        card.style.border = card.dataset.origBorder;
+      }
     });
   })();
   
@@ -1145,39 +1139,51 @@
     window.hasDrawn = false;
     players.forEach((_, i) => {
       const pDiv = document.getElementById(`player-${i}`);
-      if (pDiv && pDiv.classList.contains('HasDrawn')) pDiv.classList.remove('HasDrawn');
+      if (pDiv && pDiv.classList.contains('HasDrawn')) {
+        pDiv.classList.remove('HasDrawn');
+      }
     });
+
     const oldTurnIdx = players.findIndex((_, i) => {
       const el = document.getElementById(`player-${i}`);
       return el?.classList.contains('MyTurn');
     });
+
     players.forEach((_p, i) => {
       const pDiv = document.getElementById(`player-${i}`);
-      if (pDiv && pDiv.classList.contains('Idiscarded')) pDiv.classList.remove('Idiscarded');
+      if (pDiv && pDiv.classList.contains('Idiscarded')) {
+        pDiv.classList.remove('Idiscarded');
+      }
     });
+
     if (oldTurnIdx !== -1) {
       const oldDiv = document.getElementById(`player-${oldTurnIdx}`);
-      if (oldDiv) { oldDiv.classList.remove('MyTurn'); oldDiv.classList.add('Idiscarded'); }
+      if (oldDiv) {
+        oldDiv.classList.remove('MyTurn');
+        oldDiv.classList.add('Idiscarded');
+      }
     }
+
     const newDiv = document.getElementById(`player-${newTurnIdx}`);
     if (newDiv) newDiv.classList.add('MyTurn');
-    
-    if (window.aiData && window.aiData.isAI[newTurnIdx]) {
-      await showBuyClockPopup();
-      setTimeout(() => executeAITurn(newTurnIdx, window.aiData.difficulties[newTurnIdx]), 1000);
-    } else {
-      await showBuyClockPopup();
-    }
-    
+
+    await showBuyClockPopup();
+
     cardManager.setupDragDrop();
+
     players.forEach((p, i) => {
       const handDiv = document.getElementById(`hand-${i}`);
       if (!handDiv) return;
       const canDrag = document.getElementById(`player-${i}`).classList.contains('MyTurn');
       cardManager.renderCardArray(hands[p], handDiv, canDrag, i, 'hand');
     });
+
     cardManager.renderAllSubcontractAreas();
-    if (typeof window.updatePlayerStats === 'function') window.updatePlayerStats(hands);
+
+    if (typeof window.updatePlayerStats === 'function') {
+      window.updatePlayerStats(hands);
+    }
+
     if (drawPileDiv) {
       drawPileDiv.replaceWith(drawPileDiv.cloneNode(true));
       const freshDrawPileDiv = document.getElementById('drawPile');
@@ -1185,13 +1191,16 @@
         freshDrawPileDiv.style.cursor = 'pointer';
         freshDrawPileDiv.addEventListener('click', () => {
           const currentIdx = getMyTurnPlayerIndex();
-          if (currentIdx !== -1) drawCardFrom('draw', currentIdx);
+          if (currentIdx !== -1) {
+            drawCardFrom('draw', currentIdx);
+          }
         });
       }
     }
   }
   
   async function showBuyClockPopup() {
+    
     const clickOrder = [];
     const anyPlayerHasZeroCards = players.some((_, i) => {
       const playerDiv = document.getElementById(`player-${i}`);
@@ -1199,15 +1208,20 @@
       const cardsDiv = playerDiv.querySelector('.stat-cards');
       if (!cardsDiv) return false;
       const cardCount = Number(cardsDiv.textContent.split(':')[1].trim()) || 0;
+      console.error(cardCount);
       return cardCount === 0;
     });
-    if (anyPlayerHasZeroCards) return;
+    if (anyPlayerHasZeroCards) {
+      return;
+    }
     if (window.gameRules.hardShanghai) Hardwindow = false;
+    
     let customRules = {};
     try {
       const crStr = getCookie('customRules');
       if (crStr) customRules = JSON.parse(crStr);
     } catch {}
+  
     const buyTimeOrig = parseInt(customRules.buyClock) || 16;
     let buyTime = buyTimeOrig;
     const optOut = Boolean(customRules.optOutChk ?? false);
@@ -1218,107 +1232,184 @@
       return div?.classList.contains('MyTurn');
     });
     if (myTurnIdx === -1) return;
+    
     const myTurnPlayerDiv = document.getElementById(`player-${myTurnIdx}`);
+  
     const buyPlayers = players.map((p, i) => {
       const playerDiv = document.getElementById(`player-${i}`);
       const buysDiv = playerDiv?.querySelector('.stat-buys')?.textContent || 'Buys: 0';
       const buyStat = Number(buysDiv.split(':')[1].trim()) || 0;
       const isIdiscarded = playerDiv?.classList.contains('Idiscarded') ?? false;
-      if (i === myTurnIdx) return { playerIndex: i, name: players[i], buyStat, isMyTurn: true, isIdiscarded };
+  
+      if (i === myTurnIdx) {
+        return {
+          playerIndex: i,
+          name: players[i],
+          buyStat,
+          isMyTurn: true,
+          isIdiscarded,
+        };
+      }
       if (buyStat === 0) return null;
       if (!selfDiscard && isIdiscarded) return null;
-      return { playerIndex: i, name: players[i], buyStat, isMyTurn: false, isIdiscarded };
+  
+      return {
+        playerIndex: i,
+        name: players[i],
+        buyStat,
+        isMyTurn: false,
+        isIdiscarded,
+      };
     }).filter(x => x !== null);
+  
     if (buyPlayers.length === 0) return;
+  
     const container = document.createElement('div');
     container.id = 'buy-clock-popup';
     container.classList.add('buy-clock-popup');
+  
     const title = document.createElement('h2');
+    title.textContent = `Buying Round - Time left: ${buyTime}s`;
     title.classList.add('buy-clock-title');
     container.appendChild(title);
+  
     const discardWrapper = document.createElement('div');
     discardWrapper.classList.add('buy-clock-discard-wrapper');
+  
     const topDiscard = discardPile[discardPile.length - 1];
     if (topDiscard) {
       const cardDiv = window.createCardDiv(topDiscard, true);
       cardDiv.classList.add('buy-clock-discard-card');
       discardWrapper.appendChild(cardDiv);
     }
+  
     const countdownSpan = document.createElement('span');
     countdownSpan.classList.add('buy-clock-countdown');
+    countdownSpan.textContent = buyTime;
     discardWrapper.appendChild(countdownSpan);
+  
     container.appendChild(discardWrapper);
+  
     const btnWrapper = document.createElement('div');
     btnWrapper.classList.add('buy-clock-buttons-wrapper');
     if (players.length >= 7) {
-      btnWrapper.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));grid-template-rows:repeat(2,auto);gap:20px 24px;';
-    } else { btnWrapper.style.cssText = 'display:flex;flex-wrap:nowrap;gap:24px;'; }
-    const buyingState = {};
+      btnWrapper.style.display = 'grid';
+      btnWrapper.style.gridTemplateColumns = 'repeat(auto-fill, minmax(110px, 1fr))';
+      btnWrapper.style.gridTemplateRows = 'repeat(2, auto)';
+      btnWrapper.style.gap = '20px 24px';
+    } else {
+      btnWrapper.style.display = 'flex';
+      btnWrapper.style.flexWrap = 'nowrap';
+      btnWrapper.style.gap = '24px';
+    }
+  
+    const buyingState   = {};
     const declinedState = {};
     const activePlayers = [];
-    players.forEach((_, i) => { buyingState[i] = false; declinedState[i] = false; });
-    const allActed = () => activePlayers.every(i => buyingState[i] || declinedState[i]);
+  
+    players.forEach((_, i) => {
+      buyingState[i]   = false;
+      declinedState[i] = false;
+    });
+  
+    const allActed = () =>
+      activePlayers.every(i => buyingState[i] || declinedState[i]);
+  
     players.forEach((name, i) => {
       const playerDiv = document.getElementById(`player-${i}`);
+  
       if (playerDiv?.classList?.contains('Idiscarded') && !selfDiscard) return;
+  
       activePlayers.push(i);
+  
       const wrap = document.createElement('div');
       wrap.classList.add('buy-clock-player-wrap');
+  
       const lbl = document.createElement('div');
       lbl.classList.add('buy-clock-player-name');
       lbl.textContent = name;
       wrap.appendChild(lbl);
+  
       const isMyTurn = i === myTurnIdx;
+  
       const buyBtn = document.createElement('button');
       buyBtn.type = 'button';
       buyBtn.classList.add('buy-clock-btn');
       buyBtn.textContent = isMyTurn ? 'Not Taking' : 'Not Buying';
       wrap.appendChild(buyBtn);
+  
       const declBtn = document.createElement('button');
       declBtn.type = 'button';
       declBtn.classList.add('buy-clock-btn');
       declBtn.textContent = 'Decline';
-      declBtn.style.cssText = 'background-color:#c9302c;margin-top:6px;';
+      declBtn.style.backgroundColor = '#c9302c';
+      declBtn.style.marginTop = '6px';
       wrap.appendChild(declBtn);
+  
       buyBtn.addEventListener('click', () => {
         if (buyBtn.disabled) return;
+  
         if (optOut) {
           buyingState[i] = !buyingState[i];
-          buyBtn.textContent = buyingState[i] ? (isMyTurn ? 'Taking' : 'Buying') : (isMyTurn ? 'Not Taking' : 'Not Buying');
+          buyBtn.textContent = buyingState[i]
+            ? (isMyTurn ? 'Taking' : 'Buying')
+            : (isMyTurn ? 'Not Taking' : 'Not Buying');
           buyBtn.classList.toggle('buying', buyingState[i]);
-          if (buyingState[i]) { declBtn.disabled = false; declBtn.textContent = 'Decline'; declinedState[i] = false; }
+  
+          if (buyingState[i]) {
+            declBtn.disabled = false;
+            declBtn.textContent = 'Decline';
+            declinedState[i] = false;
+          }
         } else {
           if (buyingState[i]) return;
           buyingState[i] = true;
           buyBtn.textContent = isMyTurn ? 'Taking' : 'Buying';
           buyBtn.classList.add('buying');
           buyBtn.disabled = true;
+  
           if (fastBuy && !clickOrder.includes(i)) clickOrder.push(i);
         }
+  
         if (isMyTurn && buyingState[i]) {
           buyTime = Math.ceil(buyTime / 2);
           countdownSpan.textContent = buyTime;
           title.textContent = `Buying Round - Time left: ${buyTime}s`;
         }
-        if (allActed()) { buyTime = 0; countdownSpan.textContent = '0'; title.textContent = `Buying Round - Time left: 0s`; }
+  
+        if (allActed()) {
+          buyTime = 0;
+          countdownSpan.textContent = '0';
+          title.textContent = `Buying Round - Time left: 0s`;
+        }
       });
+  
       declBtn.addEventListener('click', () => {
         if (declBtn.disabled) return;
         declinedState[i] = true;
         declBtn.textContent = 'Declined';
         declBtn.disabled = true;
+  
         if (buyingState[i]) {
           buyingState[i] = false;
           buyBtn.textContent = isMyTurn ? 'Not Taking' : 'Not Buying';
           buyBtn.classList.remove('buying');
           if (!optOut) buyBtn.disabled = true;
         }
-        if (allActed()) { buyTime = 0; countdownSpan.textContent = '0'; title.textContent = `Buying Round - Time left: 0s`; }
+  
+        if (allActed()) {
+          buyTime = 0;
+          countdownSpan.textContent = '0';
+          title.textContent = `Buying Round - Time left: 0s`;
+        }
       });
+  
       btnWrapper.appendChild(wrap);
     });
+  
     container.appendChild(btnWrapper);
     document.body.appendChild(container);
+  
     return new Promise(resolve => {
       const intervalId = setInterval(() => {
         buyTime--;
@@ -1329,17 +1420,29 @@
         if (buyTime <= 0) {
           clearInterval(intervalId);
           container.remove();
-          processBuyResults(buyingState, myTurnIdx, optOut, selfDiscard, fastBuy, clickOrder);
+          processBuyResults(
+            buyingState,
+            myTurnIdx,
+            optOut,
+            selfDiscard,
+            fastBuy,
+            clickOrder
+          );
           resolve();
         }
       }, 1000);
     });
   }
 
-  function processBuyResults(buyingState, myTurnIdx, optOut, selfDiscard, fastBuy, clickOrder = []) {
-    const buyers = Object.entries(buyingState).filter(([_, val]) => val).map(([idxStr]) => Number(idxStr));
+  function processBuyResults(buyingState, myTurnIdx, optOut, selfDiscard, fastBuy, clickOrder = []) {    
+    const buyers = Object.entries(buyingState)
+      .filter(([_, val]) => val)
+      .map(([idxStr]) => Number(idxStr));
+
     if (buyers.length === 0) return;
+
     const myBuying = buyingState[myTurnIdx];
+
     function decrementBuyStat(playerIndex) {
       const pDiv = document.getElementById(`player-${playerIndex}`);
       if (!pDiv) return;
@@ -1349,10 +1452,14 @@
       if (val > 0) val -= 1;
       buysDiv.textContent = `Buys: ${val}`;
     }
+
     function removeHasDrawn(playerIndex) {
       const d = document.getElementById(`player-${playerIndex}`);
-      if (d && d.classList.contains('HasDrawn')) d.classList.remove('HasDrawn');
+      if (d && d.classList.contains('HasDrawn')) {
+        d.classList.remove('HasDrawn');
+      }
     }
+
     function drawFromDrawAndDiscard(playerIndex) {
       window.drawCardFrom('draw', playerIndex);
       window.drawCardFrom('discard', playerIndex);
@@ -1362,88 +1469,102 @@
       cardManager.renderDiscardPile();
       cardManager.renderAllSubcontractAreas();
     }
-    if (myBuying) { window.drawCardFrom('discard', myTurnIdx); return; }
+
+    if (myBuying) {
+      window.drawCardFrom('discard', myTurnIdx);
+      return;
+    }
     const otherBuyers = buyers.filter(idx => idx !== myTurnIdx);
+    
     if (otherBuyers.length === 0) return;
+    
     let buyerIdx;
+    
     if (fastBuy) {
       buyerIdx = clickOrder.find(idx => otherBuyers.includes(idx));
-      if (buyerIdx === undefined) buyerIdx = Math.min(...otherBuyers);
+      if (buyerIdx === undefined) {
+        buyerIdx = Math.min(...otherBuyers);
+      }
     } else {
       const order = players.map((_, i) => i);
-      const shifted = order.slice(myTurnIdx + 1).concat(order.slice(0, myTurnIdx + 1));
+      const shifted = order
+        .slice(myTurnIdx + 1)
+        .concat(order.slice(0, myTurnIdx + 1));
+    
       buyerIdx = shifted.find(p => otherBuyers.includes(p));
     }
+    
     if (buyerIdx === undefined) return;
+    
     drawFromDrawAndDiscard(buyerIdx);
   }
   
   function LayDownClick(event) {
     const btn = event?.target?.closest('.lay-down-btn');
     if (!btn) return;
+
     const playerDiv = btn.closest('.player');
     const playerIdx = playerDiv ? Number(playerDiv.id.split('-')[1]) : -1;
     if (playerIdx < 0) return;
-    if (!playerDiv.classList.contains('MyTurn')) return;
-    
-    // ADD: Check if player has drawn
-    if (!playerDiv.classList.contains('HasDrawn')) {
-      btn.textContent = 'Must Draw First';
-      setTimeout(() => (btn.textContent = 'Lay Down'), 1500);
+  
+    if (!playerDiv.classList.contains('MyTurn')) {
       return;
     }
-    
-    // ADD: Check if player has at least 1 card in hand
-    const hand = hands[players[playerIdx]] || [];
-    if (hand.length === 0) {
-      btn.textContent = 'No Cards to Lay';
-      setTimeout(() => (btn.textContent = 'Lay Down'), 1500);
-      return;
-    }
-    
+  
     const subAreas = getSubcontractSubAreas(playerIdx);
     if (!subAreas.length) return;
+  
     const roundNum = roundIndex;
     const expectedLabels = CONTRACT_SUB_AREAS[roundNum] || [];
+  
     const owner = players[playerIdx];
     const flatSubCards = subcontractCards[owner] || [];
+  
     const allValid = subAreas.every((sub, areaIdx) => {
       const label = sub.dataset.label?.toLowerCase() || '';
       const cardsInArea = flatSubCards.filter(c => c.subArea === areaIdx);
-      if (label.includes('set')) return isValidSet(cardsInArea);
-      if (label.includes('run')) return isValidRun(cardsInArea);
+  
+      if (label.includes('set'))   return isValidSet(cardsInArea);
+      if (label.includes('run'))   return isValidRun(cardsInArea);
       return false;
     });
+  
     if (!allValid) {
       btn.textContent = 'Invalid Lay‑Down';
       setTimeout(() => (btn.textContent = 'Lay Down'), 1500);
       return;
     }
+    
     const alreadyLaid = document.querySelectorAll('.player.HasLaidDown').length;
     if (alreadyLaid === 0) {
       if (window.gameRules.softShanghai) Softwindow = true;
       if (window.gameRules.hardShanghai) Hardwindow = true;
     } else if (alreadyLaid === 1) {
-      if (window.gameRules.softShanghai) Softwindow = false;
+        if (window.gameRules.softShanghai) Softwindow = false;
     }
+  
     playerDiv.classList.add('HasLaidDown');
     btn.disabled = true;
     btn.textContent = 'Laid Down';
+  
     renderAllSubcontractAreas();
-    const laidEvt = new CustomEvent('playerLaidDown', { detail: { playerIndex: playerIdx } });
+    const laidEvt = new CustomEvent('playerLaidDown', {
+      detail: { playerIndex: playerIdx }
+    });
     cardManager.setupDragDrop();
     window.dispatchEvent(laidEvt);
   }
   
+  // Expose functions to window
   window.getMyTurnPlayerIndex = getMyTurnPlayerIndex;
   window.drawCardFrom = drawCardFrom;
   window.initTable = initTable;
   window.resetTurnState = resetTurnState;
   window.validateLayDown = validateLayDown;
-  
-  // ADD: Expose AI functions globally
-  window.executeAITurn = executeAITurn;
-  window.aiDrawDecision = aiDrawDecision;
+  window.endRound = endRound;
 
-  window.addEventListener('resize', () => { layoutPiles(); layoutPlayers(); });
+  window.addEventListener('resize', () => {
+    layoutPiles();
+    layoutPlayers();
+  });
 })();
