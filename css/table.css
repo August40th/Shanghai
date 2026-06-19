@@ -430,6 +430,32 @@ body, html {
   cursor: not-allowed;
 }
 
+#discardPile.playable-discard {
+  box-shadow: 0 0 15px 5px #4CAF50;
+  cursor: pointer;
+  animation: pulse-green 1.5s infinite;
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 15px 5px rgba(76, 175, 80, 0.6); }
+  50% { box-shadow: 0 0 20px 8px rgba(76, 175, 80, 0.9); }
+}
+
+#discardPile.playable-discard::after {
+  content: "▼ PLAYABLE";
+  position: absolute;
+  bottom: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #4CAF50;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
 /* CHANGED: Future touch support - larger touch targets on touch devices */
 @media (hover: none) and (pointer: coarse) {
   :root {
