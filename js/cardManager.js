@@ -16,38 +16,29 @@
   }
   
   function getInsertIndex(container, clientX) {
-    // Get all existing card elements in the container (they are ordered left‑to‑right)
     const cards = [...container.querySelectorAll('.card')];
-    // If there are no cards yet, the new card goes at index 0
     if (cards.length === 0) return 0;
-  
-    // Walk through the cards and find the first one whose centre is to the right of the cursor
     for (let i = 0; i < cards.length; i++) {
       const rect = cards[i].getBoundingClientRect();
       const centreX = rect.left + rect.width / 2;
       if (clientX < centreX) {
-        return i;               // insert before this card
+        return i;
       }
     }
-    // Cursor is past all existing cards → insert at the very end
     return cards.length;
   }
   
   function showPlaceholder(container, clientX) {
-    // Remove any existing placeholder
     const old = container.querySelector('.placeholder');
     if (old) old.remove();
-  
     const placeholder = document.createElement('div');
     placeholder.className = 'placeholder';
     placeholder.style.position = 'relative';
-    placeholder.style.width = '45px';               // same width as a card
+    placeholder.style.width = '45px';
     placeholder.style.height = '65px';
-    placeholder.style.marginLeft = '-22px';          // half the overlap, tweak as needed
+    placeholder.style.marginLeft = '-22px';
     placeholder.style.border = '2px dashed #aaa';
     placeholder.style.boxSizing = 'border-box';
-  
-    // Insert at the calculated index
     const idx = getInsertIndex(container, clientX);
     const cards = container.querySelectorAll('.card');
     if (idx >= cards.length) {
@@ -57,7 +48,6 @@
     }
   }
 
-  // Containers reference for better access
   const discardPileDiv = document.getElementById('discardPile');
 
   function setData(data) {
@@ -71,7 +61,6 @@
     if (data.rankSize) rankSize = data.rankSize;
   }
 
-  // Utility: get key by suit symbol
   function suitToKey(suit) {
     switch (suit) {
       case '♦': return 'diamonds';
@@ -84,7 +73,6 @@
   }
   function isRedSuit(suit) { return suit === '♦' || suit === '♥'; }
 
-  // Create a card div with styling
   function createCardDiv(card, scaleDiscard = false) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
@@ -122,7 +110,7 @@
       cardDiv.style.height = `${dh - pad}px`;
       cardDiv.style.margin = '0';
       cardDiv.style.cursor = 'default';
-      cardDiv.style.pointerEvents = 'none'; // do not block pile dropzone
+      cardDiv.style.pointerEvents = 'none';
       cardDiv.style.zIndex = '100';
     } else {
       cardDiv.style.cursor = 'grab';
@@ -167,7 +155,6 @@
     const cardWidth = 45;
 
     if (areaType === 'discard') {
-      // stacked fully covering, only top card visible
       for (let i = 0; i < cardsArr.length; i++) {
         const cardDiv = createCardDiv(cardsArr[i], true);
         cardDiv.style.position = 'absolute';
@@ -181,7 +168,6 @@
       return;
     }
 
-    // For hand and subcontract areas: layered overlapping by 35%
     cardsArr.forEach((card, idx) => {
       const cardDiv = createCardDiv(card, false);
       cardDiv.style.position = 'relative';
@@ -192,19 +178,17 @@
 
       if (draggable) {
         cardDiv.draggable = true;
-        // Only allow drag if player has turn
         cardDiv.addEventListener('dragstart', e => {
           if (!checkPlayerIsMyTurn(playerIndex)) {
             e.preventDefault();
             return;
           }
           dragData.card = card;
-          dragData.from = areaType; // hand or subcontract
+          dragData.from = areaType;
           dragData.playerIndex = playerIndex;
           dragData.originIdx = idx;
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', JSON.stringify({ card, from: areaType, playerIndex, originIdx: idx }));
-          // Transparent drag image
           const crt = cardDiv.cloneNode(true);
           crt.style.position = 'absolute';
           crt.style.top = '-1000px';
@@ -225,14 +209,12 @@
     container.style.height = '65px';
   }
 
-  // Check if playerIndex corresponds to player with MyTurn class
   function checkPlayerIsMyTurn(playerIndex) {
     const playerDiv = document.getElementById(`player-${playerIndex}`);
     if (!playerDiv) return false;
     return playerDiv.classList.contains('MyTurn');
   }
 
-  // Helper to get subcontainers for subcontract subareas inside contract area per player
   function getSubcontractSubAreas(playerIndex) {
     const contractDiv = document.getElementById(`contract-${playerIndex}`);
     if (!contractDiv) return [];
@@ -258,6 +240,233 @@
       return card.rank === "W" && (card.suit === "♥" || card.suit === "♠");
 
     return false;
+  }
+
+  // ===== NEW: Helper functions for discard extension logic =====
+  
+  // Check if a card can extend a staged set (making it 4+ cards)
+  function canExtendStagedSet(card, playerIdx) {
+    const player = players[playerIdx];
+    const staged = subcontractCards[player] || [];
+    const subAreas = getSubcontractSubAreas(playerIdx);
+    
+    for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
+      const label = (subAreas[areaIdx].dataset.label || "").toLowerCase();
+      if (!label.includes("set")) continue;
+      
+      const areaCards = staged.filter(c => c.subArea === areaIdx);
+      if (areaCards.length < 3) continue;
+      
+      const setRank = areaCards[0].rank;
+      if (card.rank === setRank) {
+        const testSet = [...areaCards, card];
+        if (window.isValidSet(testSet)) {
+          return { type: 'set', areaIdx: areaIdx, canPlay: true };
+        }
+      }
+    }
+    return null;
+  }
+
+  // Check if a card can extend a staged run (at either end)
+  function canExtendStagedRun(card, playerIdx) {
+    const player = players[playerIdx];
+    const staged = subcontractCards[player] || [];
+    const subAreas = getSubcontractSubAreas(playerIdx);
+    
+    for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
+      const label = (subAreas[areaIdx].dataset.label || "").toLowerCase();
+      if (!label.includes("run")) continue;
+      
+      const areaCards = staged.filter(c => c.subArea === areaIdx);
+      if (areaCards.length < 3) continue;
+      
+      const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, 
+                          '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
+      
+      const sorted = areaCards.slice().sort((a, b) => {
+        const va = isWild(a) ? -1 : (rankValues[a.rank] || 0);
+        const vb = isWild(b) ? -1 : (rankValues[b.rank] || 0);
+        return va - vb;
+      });
+      
+      const nonWilds = sorted.filter(c => !isWild(c));
+      if (nonWilds.length === 0) continue;
+      
+      const lowCard = nonWilds[0];
+      const highCard = nonWilds[nonWilds.length - 1];
+      const lowVal = rankValues[lowCard.rank];
+      const highVal = rankValues[highCard.rank];
+      const cardVal = rankValues[card.rank];
+      
+      if (card.suit === lowCard.suit) {
+        if (cardVal === lowVal - 1 || cardVal === highVal + 1) {
+          return { type: 'run', areaIdx: areaIdx, canPlay: true };
+        }
+      }
+    }
+    return null;
+  }
+
+  // Check if a card can be played on any laid-down player's contracts
+  function canPlayOnExistingContracts(card, myIdx) {
+    for (let i = 0; i < players.length; i++) {
+      const playerDiv = document.getElementById(`player-${i}`);
+      if (!playerDiv?.classList.contains("HasLaidDown")) continue;
+      
+      const subAreas = getSubcontractSubAreas(i);
+      for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
+        const sub = subAreas[areaIdx];
+        const label = (sub.dataset.label || "").toLowerCase();
+        const owner = players[i];
+        const flatArr = subcontractCards[owner] || [];
+        const areaCards = flatArr.filter(c => c.subArea === areaIdx);
+        
+        if (label.includes("set")) {
+          const testSet = [...areaCards, card];
+          if (window.isValidSet(testSet)) {
+            return { playerIdx: i, areaIdx: areaIdx, type: 'set' };
+          }
+        }
+        
+        if (label.includes("run")) {
+          const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, 
+                            '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
+          const nonWilds = areaCards.filter(c => !isWild(c));
+          if (nonWilds.length > 0 && card.suit === nonWilds[0].suit) {
+            const sorted = nonWilds.sort((a, b) => rankValues[a.rank] - rankValues[b.rank]);
+            const lowVal = rankValues[sorted[0].rank];
+            const highVal = rankValues[sorted[sorted.length - 1].rank];
+            const cardVal = rankValues[card.rank];
+            
+            if (cardVal === lowVal - 1 || cardVal === highVal + 1) {
+              return { playerIdx: i, areaIdx: areaIdx, type: 'run' };
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  // Get current round requirements from gameRules
+  function getRoundRequirements() {
+    const rules = window.gameRules || {};
+    const round = window.currentRound || 1;
+    const contracts = rules.contracts || [];
+    return contracts[round - 1] || [];
+  }
+
+  // Check if player has staged all required contracts
+  function hasCompleteStagedContracts(playerIdx) {
+    const requirements = getRoundRequirements();
+    if (!requirements || requirements.length === 0) return false;
+    
+    const player = players[playerIdx];
+    const staged = subcontractCards[player] || [];
+    const subAreas = getSubcontractSubAreas(playerIdx);
+    
+    let setsComplete = 0;
+    let runsComplete = 0;
+    
+    for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
+      const label = (subAreas[areaIdx].dataset.label || "").toLowerCase();
+      const areaCards = staged.filter(c => c.subArea === areaIdx);
+      
+      if (label.includes("set") && areaCards.length >= 3 && window.isValidSet(areaCards)) {
+        setsComplete++;
+      } else if (label.includes("run") && areaCards.length >= 3 && window.isValidRun(areaCards)) {
+        runsComplete++;
+      }
+    }
+    
+    const requiredSets = requirements.filter(r => r.type === 'set').length;
+    const requiredRuns = requirements.filter(r => r.type === 'run').length;
+    
+    return setsComplete >= requiredSets && runsComplete >= requiredRuns;
+  }
+
+  // Update discard pile visual to indicate if top card is playable
+  function updateDiscardPlayableIndicator() {
+    if (!discardPileDiv) return;
+    discardPileDiv.classList.remove('playable-discard');
+    
+    const playerIdx = window.getMyTurnPlayerIndex ? window.getMyTurnPlayerIndex() : -1;
+    if (playerIdx === -1) return;
+    
+    const playerDiv = document.getElementById(`player-${playerIdx}`);
+    if (!playerDiv?.classList.contains("HasDrawn")) return;
+    
+    if (discardPile.length === 0) return;
+    const topCard = discardPile[discardPile.length - 1];
+    
+    const myHasLaidDown = playerDiv.classList.contains("HasLaidDown");
+    let isPlayable = false;
+    
+    if (myHasLaidDown) {
+      isPlayable = !!canPlayOnExistingContracts(topCard, playerIdx);
+    } else {
+      const hasComplete = hasCompleteStagedContracts(playerIdx);
+      if (hasComplete) {
+        isPlayable = !!canExtendStagedSet(topCard, playerIdx) || 
+                     !!canExtendStagedRun(topCard, playerIdx);
+      }
+    }
+    
+    if (isPlayable) {
+      discardPileDiv.classList.add('playable-discard');
+      discardPileDiv.title = "Click to draw - extends your contracts!";
+    } else {
+      discardPileDiv.title = "Discard pile";
+    }
+  }
+
+  function tryWildSwap(data, subAreaCards, wildIndices, subAreaIdx, label, myPlayer, hasLaidDown, owner) {
+    if (isWild(data.card) && isWild(subAreaCards[wildIdx])) return;
+    for (const wildIdx of wildIndices) {
+      const wildCard = subAreaCards[wildIdx];
+      if (
+        (label.includes("set") && window.isValidSet(replaceAt(subAreaCards, wildIdx, data.card))) ||
+        (label.includes("run") && window.isValidRun(replaceAt(subAreaCards, wildIdx, data.card)))
+      ) {
+        const flatSubs = subcontractCards[owner];
+        let countInArea = -1,
+          globalWildIdx = -1;
+        for (let i = 0; i < flatSubs.length; i++) {
+          if (flatSubs[i].subArea === subAreaIdx) countInArea++;
+          if (countInArea === wildIdx) {
+            globalWildIdx = i;
+            break;
+          }
+        }
+        if (globalWildIdx === -1) return false;
+
+        const hand = hands[myPlayer];
+        if (!hand) return false;
+
+        hand.splice(data.originIdx, 1);
+        hand.push(wildCard);
+
+        flatSubs.splice(globalWildIdx, 1, Object.assign({}, data.card, { subArea: subAreaIdx }));
+
+        const swaps = wildSwaps.get(myPlayer) || [];
+        swaps.push({
+          subArea: subAreaIdx,
+          wildCardIndex: globalWildIdx,
+          wildCard: wildCard,
+          swapCard: data.card
+        });
+        wildSwaps.set(myPlayer, swaps);
+
+        return true;
+      }
+    }
+    return false;
+  }
+  function replaceAt(arr, idx, element) {
+    const copy = arr.slice();
+    copy[idx] = element;
+    return copy;
   }
 
   function cancelWildSwaps() {
@@ -298,10 +507,18 @@
     wildSwaps.delete(myPlayer);
   }
 
-  // Setup drag and drop for hand and subcontract areas for the player with MyTurn class
-  // Expects hands and subcontractCards to be up to date
+  function getWildSwapSetting() {
+    try {
+      const cookieStr = document.cookie.split("; ").find(row => row.startsWith("customRules="));
+      if (!cookieStr) return "off";
+      const customRules = JSON.parse(decodeURIComponent(cookieStr.split("=")[1]));
+      return (customRules.wildSwap || "off").toLowerCase();
+    } catch {
+      return "off";
+    }
+  }
+
   function setupDragDrop() {
-    // Clear existing listeners
     players.forEach((_, i) => {
       const handDiv = document.getElementById(`hand-${i}`);
       if (handDiv) {
@@ -324,18 +541,8 @@
     const myPlayer = players[myTurnIdx];
     const myPlayerDiv = document.getElementById(`player-${myTurnIdx}`);
     const myHasLaidDown = myPlayerDiv?.classList.contains("HasLaidDown");
-    const wildSwapSetting = (() => {
-      try {
-        const cookieStr = document.cookie.split("; ").find(row => row.startsWith("customRules="));
-        if (!cookieStr) return "off";
-        const customRules = JSON.parse(decodeURIComponent(cookieStr.split("=")[1]));
-        return (customRules.wildSwap || "off").toLowerCase();
-      } catch {
-        return "off";
-      }
-    })();
+    const wildSwapSetting = getWildSwapSetting();
   
-    // --- Drag setup for myTurn player's hand ---
     players.forEach((_, idx) => {
       const handDiv = document.getElementById(`hand-${idx}`);
       if (!handDiv) return;
@@ -367,7 +574,6 @@
       });
     });
   
-    // --- Drag setup for myTurn player's subcontract cards ONLY if NOT laid down ---
     const mySubContracts = getSubcontractSubAreas(myTurnIdx);
     mySubContracts.forEach((sub, areaIdx) => {
       const container = sub.lastChild;
@@ -381,7 +587,6 @@
               return;
             }
             const flatSub = subcontractCards[myPlayer];
-            // Find global origin index of the card in flatSub
             let count = -1, foundIdx = -1;
             for (let i = 0; i < flatSub.length; i++) {
               if (flatSub[i].subArea === areaIdx) count++;
@@ -417,7 +622,6 @@
       });
     });
   
-    // --- Drop on myTurn player's hand: accept from own hand or subcontract if not laid ---
     const myHandDiv = document.getElementById(`hand-${myTurnIdx}`);
     if (myHandDiv) {
       myHandDiv.ondragover = e => {
@@ -438,7 +642,7 @@
           hands[myPlayer].splice(data.originIdx, 1);
           hands[myPlayer].splice(insertIdx, 0, data.card);
         } else if (data.from === "subcontract") {
-          if (myHasLaidDown) return; // cannot take subcontract cards after laying down
+          if (myHasLaidDown) return;
           subcontractCards[myPlayer].splice(data.originIdx, 1);
           hands[myPlayer].splice(insertIdx, 0, data.card);
         } else return;
@@ -448,7 +652,6 @@
       };
     }
   
-    // --- Drop on myTurn player's subcontract areas (only if not laid down) from hand or subcontract ---
     mySubContracts.forEach((sub, targetAreaIdx) => {
       sub.ondragover = e => {
         e.preventDefault();
@@ -503,7 +706,6 @@
       };
     });
   
-    // --- Drop on subcontract areas of all laid down players (includes myTurn player if laid down) ---
     players.forEach((p, playerIdx) => {
       const playerDiv = document.getElementById(`player-${playerIdx}`);
       if (!playerDiv?.classList.contains("HasLaidDown")) return;
@@ -554,13 +756,11 @@
           const subAreaCards = flatArr.filter(c => c.subArea === subAreaIdx);
           const wildIndices = subAreaCards.map((c, idx) => isWild(c) ? idx : -1).filter(i => i !== -1);
   
-          // Rules for wild swap usage
           const allowWildSwap =
             wildSwapSetting === "post"
             || (wildSwapSetting === "pre" && !myHasLaidDown);
   
           if (allowWildSwap && wildIndices.length > 0) {
-            // Try each wild card for swap
             for (const wildIdx of wildIndices) {
               const wildCard = subAreaCards[wildIdx];
               const candidateCards = subAreaCards.slice();
@@ -571,7 +771,6 @@
                             (label.includes("run") && window.isValidRun(candidateCards));
   
               if(valid){
-                // locate wild card global index in flatArr
                 let countInArea = -1, globalWildIdx = -1;
                 for(let i=0; i < flatArr.length; i++){
                   if(flatArr[i].subArea === subAreaIdx) countInArea++;
@@ -582,11 +781,9 @@
                 }
                 if(globalWildIdx === -1) return;
   
-                // Remove dropped card from hand, add replaced wild card to hand
                 hands[myPlayer].splice(data.originIdx, 1);
                 hands[myPlayer].push(wildCard);
   
-                // Replace wild card with dropped card (with subArea)
                 flatArr.splice(globalWildIdx, 1, Object.assign({}, data.card, {subArea: subAreaIdx}));
   
                 renderAllSubcontractAreas();
@@ -600,18 +797,15 @@
                     myTurnIdx,
                     'subcontract'
                 );
-                return; // swap performed, stop here
+                return;
               }
             }
           }
   
-          // If wild swap not performed allow normal drop only if valid and myTurn player and target player have laid down
           if(!myHasLaidDown && playerIdx !== myTurnIdx) {
-            // Pre wildswap cannot drop on other laid down players without laying down self
             return;
           }
   
-          // Simulate insertion in area
           const simulatedArea = subAreaCards.slice();
           simulatedArea.splice(insertIdxInArea, 0, Object.assign({}, data.card, {subArea: subAreaIdx}));
   
@@ -620,7 +814,6 @@
                         (label.includes("run") && window.isValidRun(simulatedArea));
   
           if (!valid) {
-            // Illegal drop visual cue
             sub.style.border = "2px solid red";
             setTimeout(() => { sub.style.border = ""; }, 800);
             return;
@@ -640,13 +833,12 @@
 
           // >>>>> END ROUND TRIGGER: If final card, end the round <<<<<
           if (isFinalCard && typeof window.endRound === "function") {
-            window.endRound(myTurnIdx);
+            window.endRound(myPlayer);
           }
         };
       });
     });
   
-    // --- Discard pile drop ---
     if (!discardPileDiv) return;
     discardPileDiv.ondragover = e => {
       if (!myPlayerDiv?.classList.contains("HasDrawn")) return;
@@ -677,8 +869,6 @@
       if (typeof window.updatePlayerStats === "function") {
         window.updatePlayerStats(hands);
       }
-      // Cancel wild swaps here if needed — handle undo if pre and no lay down (not shown here)
-      // Pass turn to next player
       const nextIdx = (myTurnIdx + 1) % players.length;
       const nextPlayerDiv = document.getElementById(`player-${nextIdx}`);
       if (nextPlayerDiv) {
@@ -691,14 +881,60 @@
         }
       }
     };
+    
+    // ===== ENHANCED: Discard pile click handler with extension logic =====
     discardPileDiv.onclick = e => {
       if (e.defaultPrevented) return;
-      const playerIdx = window.getMyTurnPlayerIndex();
+      const playerIdx = window.getMyTurnPlayerIndex ? window.getMyTurnPlayerIndex() : -1;
       if (playerIdx === -1) return;
-      window.drawCardFrom("discard", playerIdx);
+      
+      const playerDiv = document.getElementById(`player-${playerIdx}`);
+      if (!playerDiv?.classList.contains("HasDrawn")) {
+        // Haven't drawn yet - normal draw logic
+        if (typeof window.drawCardFrom === "function") {
+          window.drawCardFrom("discard", playerIdx);
+        }
+        return;
+      }
+      
+      // Already drawn - check if we can play from discard
+      if (discardPile.length === 0) return;
+      const topCard = discardPile[discardPile.length - 1];
+      const myHasLaidDown = playerDiv.classList.contains("HasLaidDown");
+      const myPlayer = players[playerIdx];
+      
+      // Case 1: Already laid down - can draw if playable on existing contracts
+      if (myHasLaidDown) {
+        const playTarget = canPlayOnExistingContracts(topCard, playerIdx);
+        if (playTarget) {
+          if (typeof window.drawCardFrom === "function") {
+            window.drawCardFrom("discard", playerIdx);
+          }
+        }
+        return;
+      }
+      
+      // Case 2: Not laid down yet
+      const hasComplete = hasCompleteStagedContracts(playerIdx);
+      
+      if (hasComplete) {
+        // Can draw if card extends any staged contract
+        const setExtend = canExtendStagedSet(topCard, playerIdx);
+        const runExtend = canExtendStagedRun(topCard, playerIdx);
+        
+        if (setExtend || runExtend) {
+          if (typeof window.drawCardFrom === "function") {
+            window.drawCardFrom("discard", playerIdx);
+          }
+        }
+        return;
+      }
     };
+    
+    // Update the playable indicator after setting up
+    updateDiscardPlayableIndicator();
   }
-  
+
   function renderAllSubcontractAreas() {
     const myTurnIdx = players.findIndex((_, i) => checkPlayerIsMyTurn(i));
     if (myTurnIdx === -1) return;
@@ -706,7 +942,6 @@
     const subAreas = getSubcontractSubAreas(myTurnIdx);
     if (!subAreas.length) return;
   
-    // 1️⃣  Empty each sub‑area but keep its label/placeholder.
     subAreas.forEach(sub => {
       while (sub.childNodes.length > 2) sub.removeChild(sub.lastChild);
       const container = document.createElement('div');
@@ -716,7 +951,6 @@
       sub.appendChild(container);
     });
   
-    // 2️⃣  Render cards belonging to each sub‑area.
     const owner = players[myTurnIdx];
     const cards = subcontractCards[owner] || [];
   
@@ -735,18 +969,11 @@
         cardDiv.style.marginLeft = localIdx === 0 ? '0px' : `-${overlap}px`;
         cardDiv.style.zIndex = cardsForArea.length - localIdx;
   
-        // -----------------------------------------------------------------
-        // Draggability logic:
-        //   – If the player has already laid down, subcontract cards become
-        //     static (no drag listeners attached).
-        //   – Otherwise (still the active player) they remain draggable.
-        // -----------------------------------------------------------------
         const playerHasLaid = document
           .getElementById(`player-${myTurnIdx}`)
           .classList.contains('HasLaidDown');
   
         if (!playerHasLaid) {
-          // attach drag listeners (same as original implementation)
           cardDiv.draggable = true;
           cardDiv.addEventListener('dragstart', e => {
             if (!checkPlayerIsMyTurn(myTurnIdx)) {
@@ -791,7 +1018,6 @@
     });
   }
 
-  // Render discard pile (top card fills container)
   function renderDiscardPile() {
     if (!discardPileDiv) return;
     discardPileDiv.innerHTML = '';
@@ -801,16 +1027,15 @@
       return;
     }
 
-    // Show only top card scaled to pile area, pointerEvents none
     const topCard = discardPile[discardPile.length - 1];
     const cardDiv = createCardDiv(topCard, true);
-
-    // add all cards but pointerEvents none; but only top card visible stacked fully
     discardPileDiv.appendChild(cardDiv);
+    
+    // Update playable indicator after rendering
+    updateDiscardPlayableIndicator();
   }
 
-  // Public API
-    window.cardManager = {
+  window.cardManager = {
     setData,
     renderCardArray,
     renderAllSubcontractAreas,
@@ -819,4 +1044,5 @@
   };
   window.renderDiscardPile = cardManager.renderDiscardPile;
   window.getSubcontractSubAreas = getSubcontractSubAreas;
+  window.updateDiscardPlayableIndicator = updateDiscardPlayableIndicator;
 })();
