@@ -700,21 +700,372 @@
   function renderDiscardPile() { cardManager.renderDiscardPile(); }
 
   // ===== AI FUNCTIONS WITH EXTENSION LOGIC =====
-
   async function executeAITurn(playerIdx, difficulty) {
-    console.log(`AI Turn: Player ${playerIdx} (${difficulty})`);
-    const playerDiv = document.getElementById(`player-${playerIdx}`);
-    if (!playerDiv || !playerDiv.classList.contains('MyTurn')) return;
-    
-    // Step 1: Draw decision (with extension logic)
-    await aiDrawDecision(playerIdx);
-    
-    // Future: Step 2 - Lay down if ready
-    // Future: Step 3 - Play on existing contracts
-    // Future: Step 4 - Discard
-    
-    console.log('AI Draw complete. Extend AI logic for full automation.');
-  }
+      console.log(`AI Turn: Player ${playerIdx} (${difficulty})`);
+      const playerDiv = document.getElementById(`player-${playerIdx}`);
+      if (!playerDiv || !playerDiv.classList.contains('MyTurn')) return;
+      
+      // Step 1: Draw
+      await aiDrawDecision(playerIdx);
+      
+      // Step 2: Stage cards optimally
+      await aiStageCards(playerIdx);
+      
+      // Step 3: Lay down if ready (future implementation)
+      // Step 4: Play on others' contracts (future)
+      // Step 5: Discard (future)
+      
+      console.log('AI Turn complete for Player', playerIdx);
+    }
+  
+    async function aiStageCards(playerIdx) {
+      return new Promise(resolve => {
+        setTimeout(() => {
+          const player = players[playerIdx];
+          const hand = hands[player] || [];
+          const currentStaged = subcontractCards[player] || [];
+          
+          // Get all available cards (hand + retrievable staged)
+          const allCards = [...hand, ...currentStaged];
+          
+          // Get contract requirements
+          const required = getContractRequirements(roundIndex);
+          const subAreas = getSubcontractSubAreas(playerIdx);
+          
+          // Find optimal staging
+          const optimalStaging = findOptimalStaging(allCards, required, subAreas);
+          
+          // Apply staging
+          applyStaging(playerIdx, optimalStaging, subAreas);
+          
+          // Update UI
+          const handDiv = document.getElementById(`hand-${playerIdx}`);
+          if (handDiv) cardManager.renderCardArray(hands[player], handDiv, false, playerIdx, 'hand');
+          cardManager.renderAllSubcontractAreas();
+          validateLayDown(playerIdx);
+          
+          resolve();
+        }, 500);
+      });
+    }
+  
+    function findOptimalStaging(allCards, required, subAreas) {
+      // Get labels for each sub-area
+      const areaLabels = subAreas.map(sub => {
+        const label = (sub.dataset.label || '').toLowerCase();
+        return { isSet: label.includes('set'), isRun: label.includes('run') };
+      });
+      
+      // Find all possible valid sets and runs from all cards
+      const possibleSets = findAllPossibleSets(allCards);
+      const possibleRuns = findAllPossibleRuns(allCards);
+      
+      // Try to find combination that satisfies contract
+      const bestCombination = findBestCombination(
+        possibleSets, 
+        possibleRuns, 
+        required, 
+        areaLabels,
+        allCards
+      );
+      
+      return bestCombination;
+    }
+  
+    function findAllPossibleSets(cards) {
+      const sets = [];
+      const rankGroups = {};
+      
+      // Group by rank
+      cards.forEach(card => {
+        if (!rankGroups[card.rank]) rankGroups[card.rank] = [];
+        rankGroups[card.rank].push(card);
+      });
+      
+      // Find all valid sets (3+ cards)
+      Object.entries(rankGroups).forEach(([rank, cardsOfRank]) => {
+        if (cardsOfRank.length >= 3) {
+          // Generate all combinations of 3+ cards
+          for (let size = 3; size <= cardsOfRank.length; size++) {
+            const combinations = getCombinations(cardsOfRank, size);
+            combinations.forEach(combo => {
+              if (isValidSet(combo)) {
+                sets.push({
+                  cards: combo,
+                  rank: rank,
+                  size: size,
+                  isComplete: true,
+                  value: calculateSetValue(combo)
+                });
+              }
+            });
+          }
+        } else if (cardsOfRank.length === 2) {
+          // Partial set (2 cards)
+          sets.push({
+            cards: [...cardsOfRank],
+            rank: rank,
+            size: 2,
+            isComplete: false,
+            value: 5 // Lower value for partial
+          });
+        }
+      });
+      
+      return sets;
+    }
+  
+    function findAllPossibleRuns(cards) {
+      const runs = [];
+      const suitGroups = {};
+      
+      // Group by suit
+      cards.forEach(card => {
+        if (!suitGroups[card.suit]) suitGroups[card.suit] = [];
+        suitGroups[card.suit].push(card);
+      });
+      
+      // For each suit, find all valid runs
+      Object.entries(suitGroups).forEach(([suit, cardsOfSuit]) => {
+        if (cardsOfSuit.length < 3) return;
+        
+        const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, 
+                            '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
+        
+        // Sort by rank
+        const sorted = cardsOfSuit.sort((a, b) => rankValues[a.rank] - rankValues[b.rank]);
+        
+        // Find all runs of 4+ cards
+        for (let i = 0; i < sorted.length - 3; i++) {
+          for (let j = i + 3; j <= sorted.length; j++) {
+            const subset = sorted.slice(i, j);
+            if (isValidRun(subset)) {
+              runs.push({
+                cards: [...subset],
+                suit: suit,
+                length: subset.length,
+                isComplete: subset.length >= 4,
+                lowRank: subset[0].rank,
+                highRank: subset[subset.length - 1].rank,
+                value: calculateRunValue(subset)
+              });
+            }
+          }
+        }
+        
+        // Find partial runs (3 cards, not yet valid)
+        for (let i = 0; i < sorted.length - 2; i++) {
+          const subset = sorted.slice(i, i + 3);
+          if (subset.length === 3 && !isValidRun(subset)) {
+            // Check if close to valid (consecutive or one gap)
+            const v1 = rankValues[subset[0].rank];
+            const v2 = rankValues[subset[1].rank];
+            const v3 = rankValues[subset[2].rank];
+            if ((v2 === v1 + 1 && v3 === v2 + 1) || // consecutive
+                (v2 === v1 + 2 && v3 === v2 + 1) || // gap at start
+                (v2 === v1 + 1 && v3 === v2 + 2)) { // gap at end
+              runs.push({
+                cards: [...subset],
+                suit: suit,
+                length: 3,
+                isComplete: false,
+                lowRank: subset[0].rank,
+                highRank: subset[2].rank,
+                value: 8 // Higher than partial set since runs are harder
+              });
+            }
+          }
+        }
+      });
+      
+      return runs;
+    }
+  
+    function calculateSetValue(cards) {
+      // Higher value for larger sets, bonus for high ranks
+      const rankValues = { 'A': 15, 'K': 13, 'Q': 12, 'J': 11, '10': 10, '9': 9, '8': 8, 
+                          '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2 };
+      const baseValue = cards.length * 10;
+      const rankBonus = rankValues[cards[0].rank] || 5;
+      return baseValue + rankBonus;
+    }
+  
+    function calculateRunValue(cards) {
+      // Higher value for longer runs, bonus for high cards
+      const rankValues = { 'A': 15, 'K': 13, 'Q': 12, 'J': 11, '10': 10, '9': 9, '8': 8, 
+                          '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2 };
+      const lengthBonus = cards.length * 15; // Higher per-card than sets
+      const avgRank = cards.reduce((sum, c) => sum + (rankValues[c.rank] || 5), 0) / cards.length;
+      return lengthBonus + avgRank;
+    }
+  
+    function findBestCombination(possibleSets, possibleRuns, required, areaLabels, allCards) {
+      const numAreas = areaLabels.length;
+      const staging = new Array(numAreas).fill(null).map(() => []);
+      
+      // Separate complete and partial
+      const completeSets = possibleSets.filter(s => s.isComplete).sort((a, b) => b.value - a.value);
+      const completeRuns = possibleRuns.filter(r => r.isComplete).sort((a, b) => b.value - a.value);
+      const partialSets = possibleSets.filter(s => !s.isComplete).sort((a, b) => b.value - a.value);
+      const partialRuns = possibleRuns.filter(r => !r.isComplete).sort((a, b) => b.value - a.value);
+      
+      const usedCards = new Set();
+      
+      // Track what each area needs
+      const areaNeeds = areaLabels.map(label => ({
+        needsSet: label.isSet,
+        needsRun: label.isRun,
+        filled: false
+      }));
+      
+      // PRIORITY 1: Complete contracts (runs prioritized over sets)
+      
+      // First, try to fill run areas with complete runs
+      areaNeeds.forEach((need, idx) => {
+        if (need.needsRun && !need.filled) {
+          for (const run of completeRuns) {
+            const cardKey = run.cards.map(c => `${c.rank}${c.suit}`).join(',');
+            if (!run.cards.some(c => usedCards.has(`${c.rank}${c.suit}`))) {
+              staging[idx] = [...run.cards];
+              run.cards.forEach(c => usedCards.add(`${c.rank}${c.suit}`));
+              need.filled = true;
+              break;
+            }
+          }
+        }
+      });
+      
+      // Then, fill set areas with complete sets
+      areaNeeds.forEach((need, idx) => {
+        if (need.needsSet && !need.filled) {
+          for (const set of completeSets) {
+            if (!set.cards.some(c => usedCards.has(`${c.rank}${c.suit}`))) {
+              staging[idx] = [...set.cards];
+              set.cards.forEach(c => usedCards.add(`${c.rank}${c.suit}`));
+              need.filled = true;
+              break;
+            }
+          }
+        }
+      });
+      
+      // PRIORITY 2: Partial contracts (still need more cards)
+      
+      // Fill remaining run areas with partial runs
+      areaNeeds.forEach((need, idx) => {
+        if (need.needsRun && !need.filled) {
+          for (const run of partialRuns) {
+            if (!run.cards.some(c => usedCards.has(`${c.rank}${c.suit}`))) {
+              staging[idx] = [...run.cards];
+              run.cards.forEach(c => usedCards.add(`${c.rank}${c.suit}`));
+              need.filled = true;
+              break;
+            }
+          }
+        }
+      });
+      
+      // Fill remaining set areas with partial sets
+      areaNeeds.forEach((need, idx) => {
+        if (need.needsSet && !need.filled) {
+          for (const set of partialSets) {
+            if (!set.cards.some(c => usedCards.has(`${c.rank}${c.suit}`))) {
+              staging[idx] = [...set.cards];
+              set.cards.forEach(c => usedCards.add(`${c.rank}${c.suit}`));
+              need.filled = true;
+              break;
+            }
+          }
+        }
+      });
+      
+      // PRIORITY 3: If we have complete contracts, check for better combinations
+      // (e.g., Kings are better than 2s for a set)
+      optimizeCompletedContracts(staging, areaNeeds, completeSets, completeRuns, usedCards);
+      
+      return staging;
+    }
+  
+    function optimizeCompletedContracts(staging, areaNeeds, completeSets, completeRuns, usedCards) {
+      // For each filled set area, see if there's a better (higher value) set available
+      areaNeeds.forEach((need, idx) => {
+        if (need.needsSet && need.filled && staging[idx].length > 0) {
+          const currentValue = calculateSetValue(staging[idx]);
+          
+          // Look for higher value complete set using unused cards
+          for (const set of completeSets) {
+            if (set.value > currentValue && 
+                !set.cards.some(c => usedCards.has(`${c.rank}${c.suit}`))) {
+              // Replace with better set
+              staging[idx].forEach(c => usedCards.delete(`${c.rank}${c.suit}`));
+              staging[idx] = [...set.cards];
+              set.cards.forEach(c => usedCards.add(`${c.rank}${c.suit}`));
+              break;
+            }
+          }
+        }
+      });
+      
+      // Same for runs
+      areaNeeds.forEach((need, idx) => {
+        if (need.needsRun && need.filled && staging[idx].length > 0) {
+          const currentValue = calculateRunValue(staging[idx]);
+          
+          for (const run of completeRuns) {
+            if (run.value > currentValue && 
+                !run.cards.some(c => usedCards.has(`${c.rank}${c.suit}`))) {
+              staging[idx].forEach(c => usedCards.delete(`${c.rank}${c.suit}`));
+              staging[idx] = [...run.cards];
+              run.cards.forEach(c => usedCards.add(`${c.rank}${c.suit}`));
+              break;
+            }
+          }
+        }
+      });
+    }
+  
+    function applyStaging(playerIdx, staging, subAreas) {
+      const player = players[playerIdx];
+      
+      // Clear current staging
+      subcontractCards[player] = [];
+      
+      // Apply new staging
+      staging.forEach((cards, areaIdx) => {
+        cards.forEach(card => {
+          subcontractCards[player].push({
+            ...card,
+            subArea: areaIdx
+          });
+        });
+      });
+      
+      // Update hand to remove staged cards
+      const stagedCardKeys = new Set();
+      staging.forEach(cards => {
+        cards.forEach(card => {
+          stagedCardKeys.add(`${card.rank}${card.suit}`);
+        });
+      });
+      
+      hands[player] = hands[player].filter(card => {
+        return !stagedCardKeys.has(`${card.rank}${card.suit}`);
+      });
+    }
+  
+    function getCombinations(arr, size) {
+      if (size > arr.length) return [];
+      if (size === arr.length) return [arr];
+      if (size === 1) return arr.map(e => [e]);
+      
+      const combs = [];
+      for (let i = 0; i < arr.length - size + 1; i++) {
+        const head = arr.slice(i, i + 1);
+        const tailCombs = getCombinations(arr.slice(i + 1), size - 1);
+        tailCombs.forEach(tail => combs.push([...head, ...tail]));
+      }
+      return combs;
+    }
 
   async function aiDrawDecision(playerIdx) {
     return new Promise(resolve => {
@@ -1387,6 +1738,7 @@
   window.endRound = endRound;
   window.executeAITurn = executeAITurn;
   window.aiDrawDecision = aiDrawDecision;
+  window.getSubcontractSubAreas = getSubcontractSubAreas;
 
   window.addEventListener('resize', () => { layoutPiles(); layoutPlayers(); });
 })();
