@@ -803,9 +803,6 @@
 
   // Check if card extends staged contracts (for AI with complete contracts)
   function canExtendStagedContractsAI(card, contractCards) {
-    const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, 
-                        '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
-    
     // Group by sub-area
     const subAreas = {};
     contractCards.forEach(c => {
@@ -814,25 +811,24 @@
     });
     
     for (const [areaIdx, areaCards] of Object.entries(subAreas)) {
-      // Check set extension (4th+ card)
+      // Check set extension (4th+ card) - same as before
       const sameRank = areaCards.filter(c => c.rank === card.rank);
-      if (sameRank.length >= 2) { // Already have at least 2 of this rank
-        const testSet = [...sameRank, card];
+      if (sameRank.length >= 2) {
+        const testSet = [...areaCards, card];
         if (isValidSet(testSet)) return true;
       }
       
-      // Check run extension (either end)
+      // Check run extension OR gap-filling
       const nonWilds = areaCards.filter(c => !isWild(c));
       if (nonWilds.length > 0 && card.suit === nonWilds[0].suit) {
-        const sorted = nonWilds.sort((a, b) => rankValues[a.rank] - rankValues[b.rank]);
-        const lowVal = rankValues[sorted[0].rank];
-        const highVal = rankValues[sorted[sorted.length - 1].rank];
-        const cardVal = rankValues[card.rank];
-        
-        if (cardVal === lowVal - 1 || cardVal === highVal + 1) {
-          // Check if extended run would be valid
-          const testRun = [...areaCards, card];
-          if (isValidRun(testRun)) return true;
+        // Simply test: does adding this card create a valid run?
+        // This handles: extending ends AND filling gaps
+        const testRun = [...areaCards, card];
+        if (isValidRun(testRun)) {
+          // Additional check: make sure this card actually helps (not redundant)
+          // Only count if we don't already have this exact card
+          const alreadyHave = areaCards.some(c => c.rank === card.rank && c.suit === card.suit);
+          if (!alreadyHave) return true;
         }
       }
     }
@@ -849,7 +845,6 @@
       const otherPlayer = players[i];
       const otherContract = subcontractCards[otherPlayer] || [];
       
-      // Group by sub-area
       const subAreas = {};
       otherContract.forEach(c => {
         if (!subAreas[c.subArea]) subAreas[c.subArea] = [];
@@ -864,19 +859,13 @@
           if (isValidSet(testSet)) return true;
         }
         
-        // Try extending runs
+        // Try adding to runs (includes gap-filling)
         const nonWilds = areaCards.filter(c => !isWild(c));
         if (nonWilds.length > 0 && card.suit === nonWilds[0].suit) {
-          const rankValues = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, 
-                            '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
-          const sorted = nonWilds.sort((a, b) => rankValues[a.rank] - rankValues[b.rank]);
-          const lowVal = rankValues[sorted[0].rank];
-          const highVal = rankValues[sorted[sorted.length - 1].rank];
-          const cardVal = rankValues[card.rank];
-          
-          if (cardVal === lowVal - 1 || cardVal === highVal + 1) {
-            const testRun = [...areaCards, card];
-            if (isValidRun(testRun)) return true;
+          const testRun = [...areaCards, card];
+          if (isValidRun(testRun)) {
+            const alreadyHave = areaCards.some(c => c.rank === card.rank && c.suit === card.suit);
+            if (!alreadyHave) return true;
           }
         }
       }
