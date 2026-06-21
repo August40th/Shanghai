@@ -27,7 +27,7 @@
     let setup;
     try {
       setup = JSON.parse(gs);
-      initTable(../html/setup.playerNames);
+      initTable(setup.playerNames);
     } catch (e) {
       console.error('Failed to load game setup:', e);
       window.location.href = '../html/setup.html';
