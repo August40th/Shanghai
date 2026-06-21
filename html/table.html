@@ -1,52 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shanghai Rummy - Table</title>
-  <link rel="stylesheet" href="table.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shanghai Rummy - Table</title>
+<link rel="stylesheet" href="table.css" />
 </head>
 <body>
   <div id="table-container">
-    <div id="piles">
-      <div id="drawPile">Draw</div>
-      <div id="discardPile">Discard</div>
-    </div>
+    <!-- Draw and discard piles -->
+    <div id="drawPile" class="pile"></div>
+    <div id="discardPile" class="pile">Discard</div>
+    <!-- Containers for players and contracts -->
     <div id="playersContainer"></div>
     <div id="contractsContainer"></div>
   </div>
 
-  <!-- IMPORTANT: type="module" is required for ES6 modules -->
+  <!-- CHANGED: Single module entry point -->
   <script type="module" src="tableCoordinator.js"></script>
   
-  <!-- Initialization script (calls initTable from the module) -->
+  <!-- CHANGED: Module script to initialize -->
   <script type="module">
     import { initTable } from './tableCoordinator.js';
     
-    // Get player names from URL or localStorage
-    const urlParams = new URLSearchParams(window.location.search);
-    const playersParam = urlParams.get('players');
-    let playerNames = [];
-    
-    if (playersParam) {
-      playerNames = playersParam.split(',');
-    } else {
-      // Fallback to localStorage
-      const gs = localStorage.getItem('gameSetup');
-      if (gs) {
-        try {
-          const setup = JSON.parse(gs);
-          playerNames = setup.players || [];
-        } catch {}
-      }
-    }
-    
-    if (playerNames.length > 0) {
-      window.addEventListener('DOMContentLoaded', () => {
-        initTable(playerNames);
-      });
-    } else {
-      console.error('No players found. Redirecting to setup...');
+    const gs = localStorage.getItem('gameSetup');
+    let setup;
+    try {
+      setup = JSON.parse(gs);
+      initTable(setup.playerNames);
+    } catch (e) {
+      console.error('Failed to load game setup:', e);
       window.location.href = 'setup.html';
     }
   </script>
