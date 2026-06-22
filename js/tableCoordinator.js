@@ -5,11 +5,10 @@ import { gameState, initPlayerState, getMyTurnPlayerIndex } from './gameState.js
 import * as Actions from './gameActions.js';
 import * as UI from './tableUI.js';
 
-// Expose gameState to window for debugging and old code
 window.gameState = gameState;
+window.aiData = { isAI: [], difficulties: [] };
 
 let gameRules = {};
-let aiData = { isAI: [], difficulties: [] };
 
 export async function initTable(playerNames) {
   const customization = loadCustomization();
@@ -19,11 +18,11 @@ export async function initTable(playerNames) {
   const gs = localStorage.getItem('gameSetup');
   try {
     const setup = JSON.parse(gs);
-    aiData.isAI = setup.isAI || playerNames.map(() => false);
-    aiData.difficulties = setup.difficulties || playerNames.map(() => null);
+    window.aiData.isAI = setup.isAI || playerNames.map(() => false);
+    window.aiData.difficulties = setup.difficulties || playerNames.map(() => null);
   } catch {
-    aiData.isAI = playerNames.map(() => false);
-    aiData.difficulties = playerNames.map(() => null);
+    window.aiData.isAI = playerNames.map(() => false);
+    window.aiData.difficulties = playerNames.map(() => null);
   }
   
   const customRules = loadRules();
@@ -47,12 +46,8 @@ export async function initTable(playerNames) {
   gameState.discardPile = dealt.discardPile;
   
   gameState.RoundStarter = Math.floor(Math.random() * playerNames.length);
-  const firstPlayerDiv = document.getElementById(`player-${gameState.RoundStarter}`);
-  if (firstPlayerDiv) {
-    firstPlayerDiv.classList.add('round-starter', 'MyTurn');
-  }
-  
   gameState.roundIndex = 1;
+  gameState.hasDrawn = false;
   
   const playersContainer = document.getElementById('playersContainer');
   const contractsContainer = document.getElementById('contractsContainer');
@@ -79,9 +74,15 @@ export async function initTable(playerNames) {
   
   setupEventHandlers();
   
-  if (aiData.isAI[gameState.RoundStarter]) {
+  // Set initial MyTurn
+  const firstPlayerDiv = document.getElementById(`player-${gameState.RoundStarter}`);
+  if (firstPlayerDiv) {
+    firstPlayerDiv.classList.add('round-starter', 'MyTurn');
+  }
+  
+  if (window.aiData.isAI[gameState.RoundStarter]) {
     const { executeAITurn } = await import('./aiPlayer.js');
-    setTimeout(() => executeAITurn(gameState.RoundStarter, aiData.difficulties[gameState.RoundStarter], gameRules), 1500);
+    setTimeout(() => executeAITurn(gameState.RoundStarter, window.aiData.difficulties[gameState.RoundStarter], gameRules), 1500);
   }
 }
 
@@ -89,7 +90,7 @@ function setupEventHandlers() {
   const drawPileDiv = document.getElementById('drawPile');
   if (drawPileDiv) {
     drawPileDiv.style.cursor = 'pointer';
-    drawPileDiv.addEventListener('click', () => Actions.drawCardFrom('draw', gameState.RoundStarter));
+    drawPileDiv.addEventListener('click', () => Actions.drawCardFrom('draw', getMyTurnPlayerIndex()));
   }
   
   window.addEventListener('resize', () => {
@@ -100,50 +101,33 @@ function setupEventHandlers() {
   
   setupDynamicHover();
   
-  setTimeout(() => Actions.setupDragDrop(gameRules), 200);
+  setTimeout(() => Actions.setupDragDrop(gameRules), 400); // Increased delay for DOM stability
 }
 
 function setupDynamicHover() {
-  // (your existing implementation - kept as-is)
   const table = document.getElementById('table-container');
   if (!table) return;
   
   const HOVER_CLASS = 'hover-raise';
-  const style = document.createElement('style');
-  style.textContent = `.${HOVER_CLASS} { z-index: 9999 !important; }`;
-  document.head.appendChild(style);
+  let style = document.getElementById('hover-style');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'hover-style';
+    style.textContent = `.${HOVER_CLASS} { z-index: 9999 !important; }`;
+    document.head.appendChild(style);
+  }
   
   table.addEventListener('mouseover', event => {
     const card = event.target.closest('.card');
     if (!card) return;
-    
     const playerDiv = card.closest('.player');
     if (!playerDiv?.classList.contains('MyTurn')) return;
-    
     card.classList.add(HOVER_CLASS);
-    
-    const borderColor = getComputedStyle(card).borderColor;
-    const rgb = borderColor.match(/\d+/g);
-    if (rgb) {
-      const r = 255 - Number(rgb[0]), g = 255 - Number(rgb[1]), b = 255 - Number(rgb[2]);
-      const inverted = `rgb(${r},${g},${b})`;
-      const bw = getComputedStyle(card).borderWidth || '3px';
-      const bs = getComputedStyle(card).borderStyle || 'solid';
-      card.style.border = `${bw} ${bs} ${inverted}`;
-    }
   });
   
   table.addEventListener('mouseout', event => {
     const card = event.target.closest('.card');
-    if (!card) return;
-    
-    const playerDiv = card.closest('.player');
-    if (!playerDiv?.classList.contains('MyTurn')) return;
-    
-    card.classList.remove(HOVER_CLASS);
-    if (card.dataset.origBorder !== undefined) {
-      card.style.border = card.dataset.origBorder;
-    }
+    if (card) card.classList.remove(HOVER_CLASS);
   });
 }
 
@@ -155,7 +139,6 @@ function sortByRank(cards) {
 function sortBySuitThenRank(cards) {
   const suitOrder = ['♦', '♥', '♣', '♠', '★'];
   const rankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  
   return [...cards].sort((a, b) => {
     const suitDiff = suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
     return suitDiff !== 0 ? suitDiff : rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
@@ -163,6 +146,7 @@ function sortBySuitThenRank(cards) {
 }
 
 function loadCustomization() {
+  // Full implementation from your repo
   let suitColors = {
     diamonds: { symbol: '#ffff5c', background: '#bbb', outline: '#444' },
     clubs: { symbol: '#00e9f1', background: '#bbb', outline: '#444' },
@@ -225,8 +209,7 @@ function loadRules() {
   }
 }
 
-// Global exposures for old HTML/JS compatibility
+// Global exposures
 window.initTable = initTable;
 window.LayDownClick = Actions.LayDownClick;
 window.createCardDiv = UI.createCardDiv;
-window.gameRules = gameRules;
