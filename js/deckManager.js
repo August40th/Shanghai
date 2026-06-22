@@ -1,7 +1,16 @@
-// Deck creation and management - no game state dependencies
+// Deck creation and management
 
-const SUIT_ORDER = ['♦', '♥', '♣', '♠', '★'];
 const RANK_ORDER = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+
+function loadRules() {
+  try {
+    const crStr = document.cookie.split('; ').find(row => row.startsWith('customRules='));
+    if (!crStr) return {};
+    return JSON.parse(decodeURIComponent(crStr.split('=')[1]));
+  } catch {
+    return {};
+  }
+}
 
 export function createDeck(playerCount) {
   const customRules = loadRules();
@@ -16,12 +25,16 @@ export function createDeck(playerCount) {
   for (let d = 0; d <= extraDeck; d++) {
     suits.forEach(suit => {
       RANK_ORDER.forEach(rank => {
-        deck.push({ rank, suit, deckId: d, id: `${rank}${suit}${d}${Math.random().toString(36).substr(2, 9)}` });
+        deck.push({ 
+          rank, 
+          suit, 
+          deckId: d, 
+          id: `${rank}${suit}${d}${Math.random().toString(36).substr(2, 9)}` 
+        });
       });
     });
   }
   
-  // Add jokers if enabled
   if (customRules.wildType === 'joker') {
     deck.push({ rank: 'W', suit: '♥', isJoker: true, id: `W♥${Math.random().toString(36).substr(2, 9)}` });
     deck.push({ rank: 'W', suit: '♠', isJoker: true, id: `W♠${Math.random().toString(36).substr(2, 9)}` });
@@ -45,14 +58,12 @@ export function dealCards(deck, playerNames) {
     hands[name] = [];
   });
   
-  // Deal 10 cards to each player
   playerNames.forEach(name => {
     for (let i = 0; i < 10 && deck.length > 0; i++) {
       hands[name].push(deck.pop());
     }
   });
   
-  // Discard pile starts with one card
   const discardPile = deck.length > 0 ? [deck.pop()] : [];
   
   return { hands, drawPile: deck, discardPile };
@@ -70,14 +81,4 @@ export function reshuffle(drawPile, discardPile) {
     drawPile: [drawPile[0], ...newDrawPile],
     discardPile: [topDiscard]
   };
-}
-
-function loadRules() {
-  try {
-    const crStr = document.cookie.split('; ').find(row => row.startsWith('customRules='));
-    if (!crStr) return {};
-    return JSON.parse(decodeURIComponent(crStr.split('=')[1]));
-  } catch {
-    return {};
-  }
 }
