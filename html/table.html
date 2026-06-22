@@ -8,30 +8,20 @@
 </head>
 <body>
   <div id="table-container">
-    <!-- Draw and discard piles -->
     <div id="drawPile" class="pile"></div>
     <div id="discardPile" class="pile">Discard</div>
-    <!-- Containers for players and contracts -->
     <div id="playersContainer"></div>
     <div id="contractsContainer"></div>
   </div>
 
-  <!-- CHANGED: Single module entry point -->
-  <script type="module" src="../js/tableCoordinator.js"></script>
-  
-  <!-- CHANGED: Module script to initialize -->
-  <script type="module">
-    import { initTable } from '../js/tableCoordinator.js';
-    
-    const gs = localStorage.getItem('gameSetup');
-    let setup;
-    try {
-      setup = JSON.parse(gs);
-      initTable(setup.playerNames);
-    } catch (e) {
-      console.error('Failed to load game setup:', e);
-      window.location.href = '../html/setup.html';
-    }
+  <script src="../js/initDeck.js"></script>
+  <script src="../js/tableManager.js"></script>
+  <script src="../js/cardManager.js"></script>
+  <script>
+  const gs = localStorage.getItem('gameSetup');
+  let setup;
+  setup = JSON.parse(gs);
+  window.initTable(setup.playerNames);
   </script>
 </body>
 </html>
