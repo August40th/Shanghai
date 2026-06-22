@@ -2,22 +2,22 @@
 
 import * as Deck from './deckManager.js';
 import * as Rules from './gameRules.js';
-import * as State from './gameState.js';
+import { gameState, initPlayerState, getMyTurnPlayerIndex } from './gameState.js';
 import * as Actions from './gameActions.js';
 import * as UI from './tableUI.js';
 
-// Game configuration
+// Expose gameState to window for debugging
+window.gameState = gameState;
+
 let gameRules = {};
 let aiData = { isAI: [], difficulties: [] };
-let suitColors = {};
-let backColors = { center: "#f9d71c", edge1: "#e39e13", edge2: "#cf7518", edge3: "#a05108", outline: "#3a2e01", edgeWidth: 6 };
-let suitSize = 90;
-let rankSize = 65;
 
-// Initialize game
 export async function initTable(playerNames) {
-  loadCustomization();
-  State.initPlayerState(playerNames);
+  // Load customization
+  const customization = loadCustomization();
+  
+  // Initialize state
+  initPlayerState(playerNames);
   
   // Load AI data
   const gs = localStorage.getItem('gameSetup');
@@ -47,47 +47,53 @@ export async function initTable(playerNames) {
   const deck = Deck.createDeck(playerNames.length);
   const dealt = Deck.dealCards(deck, playerNames);
   
-  State.hands = dealt.hands;
-  State.drawPile = dealt.drawPile;
-  State.discardPile = dealt.discardPile;
+  gameState.hands = dealt.hands;
+  gameState.drawPile = dealt.drawPile;
+  gameState.discardPile = dealt.discardPile;
   
   // Set up first player
-  State.RoundStarter = Math.floor(Math.random() * playerNames.length);
-  const firstPlayerDiv = document.getElementById(`player-${State.RoundStarter}`);
+  gameState.RoundStarter = Math.floor(Math.random() * playerNames.length);
+  const firstPlayerDiv = document.getElementById(`player-${gameState.RoundStarter}`);
   if (firstPlayerDiv) {
     firstPlayerDiv.classList.add('round-starter');
     firstPlayerDiv.classList.add('MyTurn');
   }
   
-  State.roundIndex = 1;
+  gameState.roundIndex = 1;
   
   // Create UI
-  UI.createPlayers(playerNames, Rules.CONTRACT_SUB_AREAS);
-  UI.populateContractSubAreas(State.roundIndex, Rules.CONTRACT_SUB_AREAS);
-  UI.layoutPiles(document.getElementById('table-container'), document.getElementById('drawPile'), document.getElementById('discardPile'), backColors);
-  UI.layoutPlayers(State.players, State.contracts, document.getElementById('table-container'));
+  const playersContainer = document.getElementById('playersContainer');
+  const contractsContainer = document.getElementById('contractsContainer');
+  
+  UI.createPlayers(playerNames, Rules.CONTRACT_SUB_AREAS, playersContainer, contractsContainer, gameState.roundIndex);
+  UI.populateContractSubAreas(gameState.roundIndex, Rules.CONTRACT_SUB_AREAS, gameState.contracts);
+  UI.layoutPiles(document.getElementById('table-container'), document.getElementById('drawPile'), document.getElementById('discardPile'), customization.backColors);
+  UI.layoutPlayers(gameState.players, gameState.contracts, document.getElementById('table-container'));
   
   // Sort hands
   playerNames.forEach(p => {
-    if (State.roundIndex === 1 || State.roundIndex === 4) {
-      State.hands[p] = sortByRank(State.hands[p]);
+    if (gameState.roundIndex === 1 || gameState.roundIndex === 4) {
+      gameState.hands[p] = sortByRank(gameState.hands[p]);
     } else {
-      State.hands[p] = sortBySuitThenRank(State.hands[p]);
+      gameState.hands[p] = sortBySuitThenRank(gameState.hands[p]);
     }
   });
   
   // Initial render
-  UI.renderHands(State.hands, State.players, State.getMyTurnPlayerIndex(), suitColors, backColors, suitSize, rankSize);
-  UI.renderDiscardPile(State.discardPile, suitColors, backColors, suitSize, rankSize);
-  UI.renderAllSubcontractAreas(State.players, State.subcontractCards, State.getMyTurnPlayerIndex(), suitColors, backColors, suitSize, rankSize);
+  UI.renderHands(gameState.hands, gameState.players, getMyTurnPlayerIndex(),
+    customization.suitColors, customization.backColors, customization.suitSize, customization.rankSize);
+  UI.renderDiscardPile(gameState.discardPile, customization.suitColors, customization.backColors,
+    customization.suitSize, customization.rankSize);
+  UI.renderAllSubcontractAreas(gameState.players, gameState.subcontractCards, getMyTurnPlayerIndex(),
+    customization.suitColors, customization.backColors, customization.suitSize, customization.rankSize);
   
   // Setup event handlers
   setupEventHandlers();
   
   // Start AI if first player is AI
-  if (aiData.isAI[State.RoundStarter]) {
+  if (aiData.isAI[gameState.RoundStarter]) {
     const { executeAITurn } = await import('./aiPlayer.js');
-    setTimeout(() => executeAITurn(State.RoundStarter, aiData.difficulties[State.RoundStarter], gameRules), 1500);
+    setTimeout(() => executeAITurn(gameState.RoundStarter, aiData.difficulties[gameState.RoundStarter], gameRules), 1500);
   }
 }
 
@@ -97,14 +103,15 @@ function setupEventHandlers() {
   if (drawPileDiv) {
     drawPileDiv.style.cursor = 'pointer';
     drawPileDiv.addEventListener('click', () => {
-      Actions.drawCardFrom('draw', State.RoundStarter);
+      Actions.drawCardFrom('draw', gameState.RoundStarter);
     });
   }
   
   // Window resize
+  const customization = loadCustomization();
   window.addEventListener('resize', () => {
-    UI.layoutPiles(document.getElementById('table-container'), document.getElementById('drawPile'), document.getElementById('discardPile'), backColors);
-    UI.layoutPlayers(State.players, State.contracts, document.getElementById('table-container'));
+    UI.layoutPiles(document.getElementById('table-container'), document.getElementById('drawPile'), document.getElementById('discardPile'), customization.backColors);
+    UI.layoutPlayers(gameState.players, gameState.contracts, document.getElementById('table-container'));
   });
   
   // Dynamic hover effect
@@ -171,34 +178,56 @@ function sortBySuitThenRank(cards) {
 }
 
 function loadCustomization() {
+  let suitColors = {
+    diamonds: { symbol: '#ffff5c', background: '#bbb', outline: '#444' },
+    clubs: { symbol: '#00e9f1', background: '#bbb', outline: '#444' },
+    hearts: { symbol: '#e97311', background: '#bbb', outline: '#444' },
+    spades: { symbol: '#01ff05', background: '#bbb', outline: '#444' },
+    stars: { symbol: 'white', background: '#bbb', outline: '#444' }
+  };
+  
+  let backColors = {
+    center: '#f9d71c',
+    edge1: '#e39e13',
+    edge2: '#cf7518',
+    edge3: '#a05108',
+    outline: '#3a2e01',
+    edgeWidth: 6
+  };
+  
+  let suitSize = 90;
+  let rankSize = 65;
+  
   try {
     const ccStr = document.cookie.split('; ').find(row => row.startsWith('cardCustom='));
-    if (!ccStr) return;
-    
-    const cc = JSON.parse(decodeURIComponent(ccStr.split('=')[1]));
-    
-    if (cc.suitColors) {
-      suitColors = {};
-      for (let key in cc.suitColors) {
-        const entry = cc.suitColors[key];
-        suitColors[key] = {
-          symbol: entry.symbol || 'white',
-          background: entry.background || '#bbb',
-          outline: entry.outline || 'green'
-        };
+    if (ccStr) {
+      const cc = JSON.parse(decodeURIComponent(ccStr.split('=')[1]));
+      
+      if (cc.suitColors) {
+        suitColors = {};
+        for (let key in cc.suitColors) {
+          const entry = cc.suitColors[key];
+          suitColors[key] = {
+            symbol: entry.symbol || 'white',
+            background: entry.background || '#bbb',
+            outline: entry.outline || 'green'
+          };
+        }
       }
+      
+      if (cc.backColors) {
+        backColors = { ...backColors, ...cc.backColors };
+        backColors.edgeWidth = Number(cc.backColors.edgeWidth) || 6;
+      }
+      
+      suitSize = Number(cc.suitSize) || 90;
+      rankSize = Number(cc.rankSize) || 65;
     }
-    
-    if (cc.backColors) {
-      backColors = { ...backColors, ...cc.backColors };
-      backColors.edgeWidth = Number(cc.backColors.edgeWidth) || 6;
-    }
-    
-    suitSize = Number(cc.suitSize) || 90;
-    rankSize = Number(cc.rankSize) || 65;
   } catch (e) {
     console.warn("Failed to parse cardCustom cookie", e);
   }
+  
+  return { suitColors, backColors, suitSize, rankSize };
 }
 
 function loadRules() {
