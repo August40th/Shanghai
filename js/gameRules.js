@@ -11,13 +11,8 @@ export const CONTRACT_SUB_AREAS = {
 };
 
 export const ROUND_CONTRACTS = [
-  "2 Sets",
-  "1 Set + 1 Run",
-  "2 Runs",
-  "3 Sets",
-  "2 Sets + 1 Run",
-  "1 Set + 2 Runs",
-  "3 Runs"
+  "2 Sets", "1 Set + 1 Run", "2 Runs", "3 Sets",
+  "2 Sets + 1 Run", "1 Set + 2 Runs", "3 Runs"
 ];
 
 export function isWild(card, gameRules) {
@@ -66,10 +61,9 @@ export function isValidRun(cards, gameRules) {
   const runSuit = distinctSuits[0];
   
   const wrapAround = gameRules?.wrapAround ?? false;
-  let extendedRankOrder = rankOrder;
   
   if (wrapAround) {
-    extendedRankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K','A','2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    const extendedRankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K','A','2','3','4','5','6','7','8','9','10','J','Q','K','A'];
     const maxStart = extendedRankOrder.length - totalLen;
     
     const matchesSequence = (seq) => {
@@ -117,7 +111,7 @@ export function calculateCardPoints(card, gameRules) {
   function isWildCard() {
     return isWild(card, gameRules);
   }
-  
+
   if (isWildCard()) return 20;
   if (card.rank === '3') return 3;
   if (card.rank === 'A') return 15;
@@ -138,8 +132,4 @@ export function getContractRequirements(roundNum) {
     7: { sets: 0, runs: 3 }
   };
   return requirements[roundNum] || { sets: 0, runs: 0 };
-}
-
-export function getCardUniqueKey(card) {
-  return card.id || `${card.rank}${card.suit}${card.deckId || 0}`;
 }
