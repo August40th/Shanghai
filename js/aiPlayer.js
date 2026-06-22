@@ -1,6 +1,6 @@
 // AI player logic
 
-import * as State from './gameState.js';
+import { gameState, getMyTurnPlayerIndex } from './gameState.js';
 import * as Rules from './gameRules.js';
 import * as UI from './tableUI.js';
 import * as Actions from './gameActions.js';
@@ -17,20 +17,19 @@ export async function executeAITurn(playerIdx, difficulty, gameRules) {
   // Step 2: Stage cards
   await aiStageCards(playerIdx, gameRules);
   
-  // Future steps...
   console.log('AI Turn complete for Player', playerIdx);
 }
 
 export async function aiDrawDecision(playerIdx, gameRules) {
   return new Promise(resolve => {
     setTimeout(() => {
-      const player = State.players[playerIdx];
-      const hand = State.hands[player] || [];
+      const player = gameState.players[playerIdx];
+      const hand = gameState.hands[player] || [];
       const playerDiv = document.getElementById(`player-${playerIdx}`);
       const hasLaidDown = playerDiv?.classList.contains('HasLaidDown') || false;
       
       let drawSource = 'draw';
-      const topDiscard = State.discardPile[State.discardPile.length - 1];
+      const topDiscard = gameState.discardPile[gameState.discardPile.length - 1];
       
       if (topDiscard) {
         const discardHelps = evaluateDiscardBenefitAI(topDiscard, hand, playerIdx, hasLaidDown, gameRules);
@@ -49,24 +48,25 @@ export async function aiDrawDecision(playerIdx, gameRules) {
 export async function aiStageCards(playerIdx, gameRules) {
   return new Promise(resolve => {
     setTimeout(() => {
-      const player = State.players[playerIdx];
-      const hand = State.hands[player] || [];
-      const currentStaged = State.subcontractCards[player] || [];
+      const player = gameState.players[playerIdx];
+      const hand = gameState.hands[player] || [];
+      const currentStaged = gameState.subcontractCards[player] || [];
       
-      // Combine all cards
       const allCards = [...hand, ...currentStaged];
-      const required = Rules.getContractRequirements(State.roundIndex);
+      const required = Rules.getContractRequirements(gameState.roundIndex);
       const subAreas = UI.getSubcontractSubAreas(playerIdx);
       
       const optimalStaging = findOptimalStaging(allCards, required, subAreas, gameRules);
       applyStaging(playerIdx, optimalStaging);
       
-      // Update UI
+      const customization = Actions.loadCustomization();
       const handDiv = document.getElementById(`hand-${playerIdx}`);
       if (handDiv) {
-        UI.renderCardArray(State.hands[player], handDiv, false, playerIdx, 'hand');
+        UI.renderCardArray(gameState.hands[player], handDiv, false, playerIdx, 'hand',
+          customization.suitColors, customization.backColors, customization.suitSize, customization.rankSize);
       }
-      UI.renderAllSubcontractAreas(State.players, State.subcontractCards, State.getMyTurnPlayerIndex());
+      UI.renderAllSubcontractAreas(gameState.players, gameState.subcontractCards, getMyTurnPlayerIndex(),
+        customization.suitColors, customization.backColors, customization.suitSize, customization.rankSize);
       
       resolve();
     }, 500);
@@ -268,34 +268,34 @@ function calculateRunValue(cards, gameRules) {
 }
 
 function applyStaging(playerIdx, staging) {
-  const player = State.players[playerIdx];
+  const player = gameState.players[playerIdx];
   
   // Get all cards
-  const currentHand = State.hands[player] || [];
-  const currentStaged = State.subcontractCards[player] || [];
+  const currentHand = gameState.hands[player] || [];
+  const currentStaged = gameState.subcontractCards[player] || [];
   const allCards = [...currentHand, ...currentStaged];
   
   // Build new hand from cards NOT in staging
   const stagedIds = new Set(staging.flat().map(c => c.id));
-  State.hands[player] = allCards.filter(c => !stagedIds.has(c.id));
+  gameState.hands[player] = allCards.filter(c => !stagedIds.has(c.id));
   
   // Build new staging
-  State.subcontractCards[player] = [];
+  gameState.subcontractCards[player] = [];
   staging.forEach((cards, areaIdx) => {
     cards.forEach(card => {
-      State.subcontractCards[player].push({ ...card, subArea: areaIdx });
+      gameState.subcontractCards[player].push({ ...card, subArea: areaIdx });
     });
   });
 }
 
 function evaluateDiscardBenefitAI(card, hand, playerIdx, hasLaidDown, gameRules) {
-  const player = State.players[playerIdx];
-  const contractCards = State.subcontractCards[player] || [];
+  const player = gameState.players[playerIdx];
+  const contractCards = gameState.subcontractCards[player] || [];
   
   if (hasLaidDown) {
     return canPlayOnExistingContractsAI(card, playerIdx, gameRules);
   } else {
-    const required = Rules.getContractRequirements(State.roundIndex);
+    const required = Rules.getContractRequirements(gameState.roundIndex);
     const status = analyzeContractStatus(contractCards, required, gameRules);
     const hasCompleteContracts = status.needsSets <= 0 && status.needsRuns <= 0;
     
@@ -357,13 +357,13 @@ function canExtendStagedContractsAI(card, contractCards, gameRules) {
 }
 
 function canPlayOnExistingContractsAI(card, playerIdx, gameRules) {
-  for (let i = 0; i < State.players.length; i++) {
+  for (let i = 0; i < gameState.players.length; i++) {
     if (i === playerIdx) continue;
     const otherDiv = document.getElementById(`player-${i}`);
     if (!otherDiv?.classList.contains('HasLaidDown')) continue;
     
-    const otherPlayer = State.players[i];
-    const otherContract = State.subcontractCards[otherPlayer] || [];
+    const otherPlayer = gameState.players[i];
+    const otherContract = gameState.subcontractCards[otherPlayer] || [];
     
     const subAreas = {};
     otherContract.forEach(c => {
