@@ -1,5 +1,4 @@
 // Pure game logic - no DOM, no state mutations
-
 export const CONTRACT_SUB_AREAS = {
   1: ['Set 1', 'Set 2'],
   2: ['Set 1', 'Run 1'],
@@ -132,4 +131,11 @@ export function getContractRequirements(roundNum) {
     7: { sets: 0, runs: 3 }
   };
   return requirements[roundNum] || { sets: 0, runs: 0 };
+}
+
+// Backward compatibility for old code
+if (typeof window !== 'undefined') {
+  window.isValidSet = (cards, rules) => isValidSet(cards, rules || window.gameRules || {});
+  window.isValidRun = (cards, rules) => isValidRun(cards, rules || window.gameRules || {});
+  window.isWild = (card, rules) => isWild(card, rules || window.gameRules || {});
 }
