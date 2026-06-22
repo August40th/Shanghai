@@ -729,3 +729,22 @@ export function setupDiscardDragDrop(discardPileDiv, playerIdx, player, gameRule
     onMove(data, 'discard', {});
   };
 }
+
+// DRAG AND DROP SETUP - ADDED FOR FULL FUNCTIONALITY
+export function setupHandDragDrop(handDiv, playerIndex, playerName, hasLaidDown, gameRules, handleCardMove) {
+  if (!handDiv) return;
+  handDiv.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+  handDiv.ondrop = e => { e.preventDefault(); handleCardMove(e, 'hand', playerIndex, gameRules); };
+}
+
+export function setupSubcontractDragDrop(subAreaDiv, targetAreaIdx, playerIndex, playerName, hasLaidDown, gameRules, handleCardMove) {
+  if (!subAreaDiv) return;
+  subAreaDiv.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+  subAreaDiv.ondrop = e => { e.preventDefault(); handleCardMove(e, 'subcontract', playerIndex, gameRules, targetAreaIdx); };
+}
+
+export function setupDiscardDragDrop(discardDiv, playerIndex, playerName, gameRules, handleCardMove) {
+  if (!discardDiv) return;
+  discardDiv.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+  discardDiv.ondrop = e => { e.preventDefault(); handleCardMove(e, 'discard', playerIndex, gameRules); };
+}
