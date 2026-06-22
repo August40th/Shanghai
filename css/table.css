@@ -482,3 +482,254 @@ body, html {
     font-size: 18px; /* 14px * 1.3 */
   }
 }
+
+/* Existing styles remain unchanged */
+/* Add these if not already present */
+
+#table-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: #1a472a;
+  overflow: hidden;
+}
+
+#piles {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 20px;
+  z-index: 100;
+}
+
+#drawPile, #discardPile {
+  width: 120px;
+  height: 160px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+  text-shadow: 1px 1px 2px black;
+  position: relative;
+}
+
+#drawPile {
+  background: #2e7d32;
+  cursor: pointer;
+}
+
+#discardPile {
+  background: #c62828;
+}
+
+.player {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 10px;
+  padding: 10px;
+  min-width: 200px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+
+.player.MyTurn {
+  box-shadow: 0 0 20px #ffeb3b;
+  border: 3px solid #ffeb3b;
+}
+
+.player.HasLaidDown {
+  background: #c8e6c9;
+}
+
+.nameplate {
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 5px;
+}
+
+.lay-down-btn {
+  display: block;
+  width: 100%;
+  margin: 5px 0;
+  padding: 8px;
+  cursor: pointer;
+  background: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+}
+
+.lay-down-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.stats {
+  font-size: 12px;
+  margin: 5px 0;
+}
+
+.hand-area {
+  min-height: 75px;
+  margin-top: 8px;
+}
+
+.contract-area {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  padding: 5px;
+  min-width: 150px;
+}
+
+.contract-subarea {
+  display: inline-flex;
+  align-items: center;
+  min-height: 75px;
+  min-width: 100px;
+  border: 1px dashed #666;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px;
+  background: #fff;
+}
+
+.contract-subarea[data-label*="Set"] {
+  background: #e3f2fd;
+}
+
+.contract-subarea[data-label*="Run"] {
+  background: #f3e5f5;
+}
+
+.card {
+  width: 45px;
+  height: 65px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  user-select: none;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+.card .rank {
+  position: absolute;
+  top: 6%;
+  right: 7%;
+  font-size: 18px;
+}
+
+.card .suit {
+  font-size: 25px;
+}
+
+/* Popups */
+.round-winner-popup,
+.scores-popup,
+.game-winner-popup,
+.buy-clock-popup,
+.round-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  z-index: 1000;
+  text-align: center;
+  max-width: 80%;
+}
+
+.round-popup {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.buy-clock-popup {
+  min-width: 400px;
+}
+
+.buy-clock-title {
+  margin-top: 0;
+}
+
+.buy-clock-discard-wrapper {
+  margin: 20px 0;
+}
+
+.buy-clock-buttons-wrapper {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.buy-clock-player-wrap {
+  text-align: center;
+}
+
+.buy-clock-btn {
+  padding: 10px 20px;
+  margin: 5px;
+  cursor: pointer;
+  border: none;
+  border-radius: 5px;
+  background: #4caf50;
+  color: white;
+}
+
+.buy-clock-btn.buying {
+  background: #ff9800;
+}
+
+.scores-header,
+.scores-row {
+  display: flex;
+  gap: 10px;
+  margin: 5px 0;
+}
+
+.cell {
+  min-width: 60px;
+  padding: 5px;
+  text-align: center;
+}
+
+.scores-total-row {
+  font-weight: bold;
+  border-top: 2px solid #333;
+}
+
+.lowest-score {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+/* Drag and drop visual feedback */
+.drop-target {
+  background: #e8f5e9 !important;
+  border: 2px dashed #4caf50 !important;
+}
+
+.playable-discard {
+  animation: pulse-green 1.5s infinite;
+  cursor: pointer;
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 15px 5px rgba(76, 175, 80, 0.6); }
+  50% { box-shadow: 0 0 20px 8px rgba(76, 175, 80, 0.9); }
+}
+
+/* Hover effects */
+.hover-raise {
+  z-index: 9999 !important;
+}
