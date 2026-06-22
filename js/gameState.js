@@ -1,52 +1,56 @@
-// Centralized state management
+// Centralized state management - export mutable container
 
-export let players = [];
-export let contracts = [];
-export let hands = {};
-export let subcontractCards = {};
-export let drawPile = [];
-export let discardPile = [];
-export let hasDrawn = false;
-export let RoundStarter = 0;
-export let roundFinished = false;
-export let roundIndex = 0;
-export let Softwindow = false;
-export let Hardwindow = false;
-export let scorePopupOpen = false;
+export const gameState = {
+  players: [],
+  contracts: [],
+  hands: {},
+  subcontractCards: {},
+  drawPile: [],
+  discardPile: [],
+  hasDrawn: false,
+  RoundStarter: 0,
+  roundFinished: false,
+  roundIndex: 0,
+  Softwindow: false,
+  Hardwindow: false,
+  scorePopupOpen: false,
+  roundHistory: []
+};
 
 export function initPlayerState(playerNames) {
-  players = playerNames;
-  contracts = new Array(playerNames.length).fill(null);
-  subcontractCards = {};
-  playerNames.forEach(p => subcontractCards[p] = []);
-  hands = {};
-  drawPile = [];
-  discardPile = [];
-  hasDrawn = false;
-  roundFinished = false;
-  roundIndex = 0;
-  Softwindow = false;
-  Hardwindow = false;
-  scorePopupOpen = false;
+  gameState.players = playerNames;
+  gameState.contracts = new Array(playerNames.length).fill(null);
+  gameState.subcontractCards = {};
+  playerNames.forEach(p => gameState.subcontractCards[p] = []);
+  gameState.hands = {};
+  gameState.drawPile = [];
+  gameState.discardPile = [];
+  gameState.hasDrawn = false;
+  gameState.roundFinished = false;
+  gameState.roundIndex = 0;
+  gameState.Softwindow = false;
+  gameState.Hardwindow = false;
+  gameState.scorePopupOpen = false;
+  gameState.roundHistory = [];
 }
 
 export function getMyTurnPlayerIndex() {
-  return players.findIndex((_, i) => {
+  return gameState.players.findIndex((_, i) => {
     const el = document.getElementById(`player-${i}`);
     return el?.classList.contains('MyTurn');
   });
 }
 
 export function updatePlayerStats(gameRules) {
-  players.forEach((player, i) => {
-    const hand = hands[player] || [];
+  gameState.players.forEach((player, i) => {
+    const hand = gameState.hands[player] || [];
     const playerDiv = document.getElementById(`player-${i}`);
     if (!playerDiv) return;
     const stats = playerDiv.querySelector('.stats');
     if (!stats) return;
     
     const hasLaidDown = playerDiv.classList.contains('HasLaidDown');
-    const subcontract = subcontractCards[player] || [];
+    const subcontract = gameState.subcontractCards[player] || [];
     const cardsForStats = hasLaidDown ? hand : hand.concat(subcontract);
     
     let heldPoints = 0;
@@ -67,13 +71,21 @@ export function updatePlayerStats(gameRules) {
   });
 }
 
-export function getCardById(cards, id) {
-  return cards.find(c => c.id === id);
+function calculateCardPoints(card, gameRules) {
+  function isWildCard() {
+    if (!gameRules?.wildsEnabled) return false;
+    const type = (gameRules.wildType || 'classic').toLowerCase();
+    if (type === 'classic') return card.rank === '3' && (card.suit === '♦' || card.suit === '♥');
+    if (type === 'extra') return card.rank === '3' && (card.suit === '♦' || card.suit === '♥' || card.suit === '★');
+    if (type === 'joker') return card.rank === 'W';
+    return false;
+  }
+  
+  if (isWildCard()) return 20;
+  if (card.rank === '3') return 3;
+  if (card.rank === 'A') return 15;
+  if (['10', 'J', 'Q', 'K'].includes(card.rank)) return 10;
+  if ('2 4 5 6 7 8 9'.split(' ').includes(card.rank)) return Number(card.rank);
+  if (card.rank === 'W') return 20;
+  return 0;
 }
-
-export function removeCardById(cards, id) {
-  return cards.filter(c => c.id !== id);
-}
-
-// Import from gameRules to avoid circular dependency
-import { calculateCardPoints } from './gameRules.js';
