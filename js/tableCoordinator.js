@@ -1,25 +1,21 @@
 // Main coordinator - imports all modules and initializes the game
-
 import * as Deck from './deckManager.js';
 import * as Rules from './gameRules.js';
 import { gameState, initPlayerState, getMyTurnPlayerIndex } from './gameState.js';
 import * as Actions from './gameActions.js';
 import * as UI from './tableUI.js';
 
-// Expose gameState to window for debugging
+// Expose gameState to window for debugging and old code
 window.gameState = gameState;
 
 let gameRules = {};
 let aiData = { isAI: [], difficulties: [] };
 
 export async function initTable(playerNames) {
-  // Load customization
   const customization = loadCustomization();
   
-  // Initialize state
   initPlayerState(playerNames);
   
-  // Load AI data
   const gs = localStorage.getItem('gameSetup');
   try {
     const setup = JSON.parse(gs);
@@ -30,7 +26,6 @@ export async function initTable(playerNames) {
     aiData.difficulties = playerNames.map(() => null);
   }
   
-  // Load rules
   const customRules = loadRules();
   gameRules = {
     extraDeck: customRules.extraDeckChk ? 1 : 0,
@@ -42,8 +37,8 @@ export async function initTable(playerNames) {
     hardShanghai: customRules.hardShanghaiChk,
     finalShanghai: customRules.finalShanghaiChk
   };
+  window.gameRules = gameRules;
   
-  // Create deck and deal
   const deck = Deck.createDeck(playerNames.length);
   const dealt = Deck.dealCards(deck, playerNames);
   
@@ -51,17 +46,14 @@ export async function initTable(playerNames) {
   gameState.drawPile = dealt.drawPile;
   gameState.discardPile = dealt.discardPile;
   
-  // Set up first player
   gameState.RoundStarter = Math.floor(Math.random() * playerNames.length);
   const firstPlayerDiv = document.getElementById(`player-${gameState.RoundStarter}`);
   if (firstPlayerDiv) {
-    firstPlayerDiv.classList.add('round-starter');
-    firstPlayerDiv.classList.add('MyTurn');
+    firstPlayerDiv.classList.add('round-starter', 'MyTurn');
   }
   
   gameState.roundIndex = 1;
   
-  // Create UI
   const playersContainer = document.getElementById('playersContainer');
   const contractsContainer = document.getElementById('contractsContainer');
   
@@ -70,7 +62,6 @@ export async function initTable(playerNames) {
   UI.layoutPiles(document.getElementById('table-container'), document.getElementById('drawPile'), document.getElementById('discardPile'), customization.backColors);
   UI.layoutPlayers(gameState.players, gameState.contracts, document.getElementById('table-container'));
   
-  // Sort hands
   playerNames.forEach(p => {
     if (gameState.roundIndex === 1 || gameState.roundIndex === 4) {
       gameState.hands[p] = sortByRank(gameState.hands[p]);
@@ -79,7 +70,6 @@ export async function initTable(playerNames) {
     }
   });
   
-  // Initial render
   UI.renderHands(gameState.hands, gameState.players, getMyTurnPlayerIndex(),
     customization.suitColors, customization.backColors, customization.suitSize, customization.rankSize);
   UI.renderDiscardPile(gameState.discardPile, customization.suitColors, customization.backColors,
@@ -87,10 +77,8 @@ export async function initTable(playerNames) {
   UI.renderAllSubcontractAreas(gameState.players, gameState.subcontractCards, getMyTurnPlayerIndex(),
     customization.suitColors, customization.backColors, customization.suitSize, customization.rankSize);
   
-  // Setup event handlers
   setupEventHandlers();
   
-  // Start AI if first player is AI
   if (aiData.isAI[gameState.RoundStarter]) {
     const { executeAITurn } = await import('./aiPlayer.js');
     setTimeout(() => executeAITurn(gameState.RoundStarter, aiData.difficulties[gameState.RoundStarter], gameRules), 1500);
@@ -98,31 +86,29 @@ export async function initTable(playerNames) {
 }
 
 function setupEventHandlers() {
-  // Draw pile click
   const drawPileDiv = document.getElementById('drawPile');
   if (drawPileDiv) {
     drawPileDiv.style.cursor = 'pointer';
-    drawPileDiv.addEventListener('click', () => {
-      Actions.drawCardFrom('draw', gameState.RoundStarter);
-    });
+    drawPileDiv.addEventListener('click', () => Actions.drawCardFrom('draw', gameState.RoundStarter));
   }
   
-  // Window resize
-  const customization = loadCustomization();
   window.addEventListener('resize', () => {
-    UI.layoutPiles(document.getElementById('table-container'), document.getElementById('drawPile'), document.getElementById('discardPile'), customization.backColors);
+    const cust = loadCustomization();
+    UI.layoutPiles(document.getElementById('table-container'), document.getElementById('drawPile'), document.getElementById('discardPile'), cust.backColors);
     UI.layoutPlayers(gameState.players, gameState.contracts, document.getElementById('table-container'));
   });
   
-  // Dynamic hover effect
   setupDynamicHover();
+  
+  setTimeout(() => Actions.setupDragDrop(gameRules), 200);
 }
 
 function setupDynamicHover() {
+  // (your existing implementation - kept as-is)
   const table = document.getElementById('table-container');
   if (!table) return;
   
-  const HOVER_CLASS = 'hover‑raise';
+  const HOVER_CLASS = 'hover-raise';
   const style = document.createElement('style');
   style.textContent = `.${HOVER_CLASS} { z-index: 9999 !important; }`;
   document.head.appendChild(style);
@@ -161,7 +147,6 @@ function setupDynamicHover() {
   });
 }
 
-// Helper functions
 function sortByRank(cards) {
   const rankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   return [...cards].sort((a, b) => rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank));
@@ -240,5 +225,8 @@ function loadRules() {
   }
 }
 
-// Expose initTable to window for HTML access
+// Global exposures for old HTML/JS compatibility
 window.initTable = initTable;
+window.LayDownClick = Actions.LayDownClick;
+window.createCardDiv = UI.createCardDiv;
+window.gameRules = gameRules;
