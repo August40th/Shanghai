@@ -62,7 +62,7 @@ header .title::after {
 /* Tabs */
 .tabs {
   background: #111;
-  padding=border-left: 8px;
+  padding-left: 8px;
   border-bottom: 1px solid #222;
 }
 
@@ -298,9 +298,9 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Detailed rules tab */
-detailed-card {
+.detailed-card {
   position: relative;
-  padding: 0; /* Remove padding to eliminate space */
+  padding: 0;
   border-radius: 8px;
   min-height: 220px;
 }
@@ -380,8 +380,9 @@ detailed-card {
 
 .card-customization {
   display: flex;
-  flex-direction: row; /* change from column to row */
-  gap: 164px;
+  flex-direction: row;
+  gap: 32px;
+  flex-wrap: wrap;
 }
 
 .suits-row {
@@ -482,53 +483,16 @@ detailed-card {
 }
 
 .card-preview {
+  /* Dimensions set dynamically by updatePreview() in setup.js.
+     Only non-sizing properties here to avoid conflicts. */
   margin-top: 12px;
-  width: 160px;
-  height: 224px;
-  border-radius: 12px;
-  background: white;
-  box-shadow: 0 0 10px rgba(0,0,0,0.7);
-  position: relative;
-}
-
-.card-preview .suit-symbol {
-  position: absolute;
-  top: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.card-preview .rank {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  font-weight: 600;
-  user-select: none;
+  flex-shrink: 0;
 }
 
 .tablecard-preview {
+  /* Dimensions set dynamically by updateTablePreview() in setup.js. */
   margin-top: 12px;
-  width: 75px;
-  height: 90px;
-  border-radius: 12px;
-  background: white;
-  box-shadow: 0 0 10px rgba(0,0,0,0.7);
-  position: relative;
-}
-
-.tablecard-preview .suit-symbol {
-  position: absolute;
-  top: 40px;
-  left: 20%;
-  transform: translateX(-20%);
-}
-
-.tablecard-preview .rank {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  font-weight: 600;
-  user-select: none;
+  flex-shrink: 0;
 }
 
 .card-back-customization {
@@ -555,25 +519,9 @@ detailed-card {
   border: 2px solid white;
 }
 
-#cardBackPreview {
-  margin-top: 12px;
-  width: 160px;
-  height: 224px;
-  border-radius: 12px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.6);
-  background: black;
-  position: relative;
-}
-
-#tablecardBackPreview {
-  margin-top: 12px;
-  width: 75pxx;
-  height: 90px;
-  border-radius: 6px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.6);
-  background: black;
-  position: relative;
-}
+/* #cardBackPreview and #tablecardBackPreview dimensions are set
+   dynamically by updateCardBackPreview() / updateTableCardBackPreview()
+   in setup.js — no static CSS rules needed here. */
 
 .player-name-input {
   font-size: 0.8rem;

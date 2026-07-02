@@ -81,9 +81,10 @@ class initDeck {
   }
   
   reshuffle(drawPile, discardPile) {
+    // Only reshuffle when draw pile is empty or has exactly 1 card left.
     if (drawPile.length > 1) {
-      console.warn('More than 1 card in drawpile');
-      return;
+      console.warn('More than 1 card in drawpile — reshuffle not needed.');
+      return { drawPile, discardPile };
     }
     // Nothing to reshuffle if there are 0 or 1 cards in the discard pile.
     if (!Array.isArray(discardPile) || discardPile.length <= 1) {
@@ -129,12 +130,18 @@ class initDeck {
     const hands = {};
     playerNames.forEach(name => hands[name] = []);
 
+    // Deal one card at a time to each player (round-robin), drawing from the
+    // top of the pile. drawPile is drawn with pop() elsewhere so we reverse
+    // the pile once before dealing to maintain consistent draw order.
+    this.drawPile.reverse();
     for (let i = 0; i < 10; i++) {
       for (let name of playerNames) {
-        const card = this.drawPile.shift();
+        const card = this.drawPile.pop();
         if (card) hands[name].push(card);
       }
     }
+    // Restore natural pop() order for subsequent draws.
+    this.drawPile.reverse();
 
     return hands;
     

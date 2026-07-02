@@ -161,12 +161,18 @@ function buildPlayerSlots() {
 decComp.addEventListener('click',()=>{if(numComputers>2){numComputers--;buildPlayerSlots();}});
 incComp.addEventListener('click',()=>{if(numComputers<10){numComputers++;buildPlayerSlots();}});
 randomizeBtn.addEventListener('click', () => {
-  const shuffledNames = aiPool.sort(() => 0.5 - Math.random());
+  // Fisher-Yates on a copy — avoids the biased sort() shuffle and
+  // avoids permanently mutating the aiPool array.
+  const pool = [...aiPool];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
   const slots = document.querySelectorAll('.player-slot');
   slots.forEach((slot, i) => {
     if (i < numComputers) {
       const nameInput = slot.querySelector('input.player-name-input');
-      if (nameInput) { nameInput.value = shuffledNames[i]; saveSettingsToCookies(); }
+      if (nameInput) { nameInput.value = pool[i]; saveSettingsToCookies(); }
     }
   });
 });
@@ -231,6 +237,8 @@ const backEdgeColor2Btn = document.getElementById("backEdgeColor2");
 const backEdgeColor3Btn = document.getElementById("backEdgeColor3");
 const backEdgeOutlineColorBtn = document.getElementById("backEdgeOutlineColor");
 const cardBackPreview = document.getElementById("cardBackPreview");
+const tablecardPreview = document.getElementById("tablecardPreview");
+const tablecardBackPreview = document.getElementById("tablecardBackPreview");
 
 let selectedSuitKey = "hearts";
 const suitColors = {};
@@ -280,13 +288,33 @@ function createColorSquares(selectedColorHex,disallowedColorHex) {
     colorsGrid.appendChild(square);
     if (hex !== disallowedColorHex) {
       square.addEventListener("click", () => {
-        if (colorPickerMode === "symbol") { suitColors[selectedSuitKey] = suitColors[selectedSuitKey] || {}; suitColors[selectedSuitKey].symbol = hex; }
-        else if (colorPickerMode === "background") { suitColors[selectedSuitKey] = suitColors[selectedSuitKey] || {}; suitColors[selectedSuitKey].background = hex; }
-        else if (colorPickerMode.startsWith("back-")) { const colorPart = colorPickerMode.split("-")[1]; backColors[colorPart] = hex; }
-        colorPickerPopup.style.display = "none";
-        updateColorButtonsState();
-        updatePreview();
-        updateTablePreview();
+        if (colorPickerMode === "symbol") {
+          suitColors[selectedSuitKey] = suitColors[selectedSuitKey] || {};
+          suitColors[selectedSuitKey].symbol = hex;
+          colorPickerPopup.style.display = "none";
+          buildSuitButtons();       // repaint suit row with new symbol color
+          updateColorButtonsState();
+          updatePreview();
+          updateTablePreview();
+        } else if (colorPickerMode === "background") {
+          suitColors[selectedSuitKey] = suitColors[selectedSuitKey] || {};
+          suitColors[selectedSuitKey].background = hex;
+          colorPickerPopup.style.display = "none";
+          buildSuitButtons();       // repaint suit row with new background color
+          updateColorButtonsState();
+          updatePreview();
+          updateTablePreview();
+        } else if (colorPickerMode.startsWith("back-")) {
+          const colorPart = colorPickerMode.split("-").slice(1).join("-");
+          backColors[colorPart] = hex;
+          colorPickerPopup.style.display = "none";
+          updateColorButtonsState();
+          updateCardBackPreview();          // ← was missing
+          updateTableCardBackPreview();     // ← was missing
+          updatePreview();                  // face border uses backColors.outline
+          updateTablePreview();
+        }
+        saveSettingsToCookies();
       });
     }
   });
@@ -310,62 +338,79 @@ function updatePreview() {
   if (!selectedSuitKey) return;
   cardPreview.innerHTML = "";
   const suitColor = suitColors[selectedSuitKey]?.symbol || "white";
-  const bgColor = suitColors[selectedSuitKey]?.background || "black";
-  const suitSize = +suitSizeSlider.value;
-  const rankSize = +rankSizeSlider.value;
-  const edgeWidth = backColors.edgeWidth;
-
-  cardPreview.style.cssText = `background-color:${bgColor};border:${edgeWidth}px solid ${backColors.outline};position:relative;box-sizing:border-box;`;
-
+  const bgColor   = suitColors[selectedSuitKey]?.background || "black";
+  const suitSz    = +suitSizeSlider.value;
+  const rankSz    = +rankSizeSlider.value;
+  const edgeWidth = backColors.edgeWidth || 2;
+  // Include all dimensions in cssText — it replaces ALL inline styles.
+  cardPreview.style.cssText = [
+    "width:160px","height:224px","border-radius:12px","position:relative",
+    "box-sizing:border-box","overflow:hidden",
+    `background-color:${bgColor}`,
+    `border:${edgeWidth}px solid ${backColors.outline || "#333"}`,
+    "box-shadow:0 0 10px rgba(0,0,0,0.7)",
+  ].join(";");
   const suitElem = document.createElement("div");
   suitElem.className = "suit-symbol";
   suitElem.textContent = suitData.find(s => s.key === selectedSuitKey)?.symbol || "?";
-  suitElem.style.cssText = `color:${suitColor};font-size:${suitSize}px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);`;
+  suitElem.style.cssText = `color:${suitColor};font-size:${suitSz}px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;user-select:none;`;
   cardPreview.appendChild(suitElem);
-
   const rankElem = document.createElement("div");
   rankElem.className = "rank";
   rankElem.textContent = "A";
-  rankElem.style.cssText = `color:${suitColor};font-size:${rankSize}px;position:absolute;top:0;right:8px;line-height:1;white-space:nowrap;user-select:none;pointer-events:none;`;
+  rankElem.style.cssText = `color:${suitColor};font-size:${rankSz * 0.55}px;position:absolute;top:6px;right:8px;line-height:1;white-space:nowrap;user-select:none;pointer-events:none;font-weight:bold;`;
   cardPreview.appendChild(rankElem);
 }
 
 function updateCardBackPreview() {
   const c = backColors;
-  cardBackPreview.style.background = `radial-gradient(circle at center,${c.center} 0%,${c.edge1} 25%,${c.edge2} 50%,${c.edge3} 75%,${c.edge3} 80%)`;
-  cardBackPreview.style.border = `${c.edgeWidth}px solid ${c.outline}`;
-  cardBackPreview.style.boxSizing = "border-box";
+  // Set each property individually so we never accidentally wipe dimensions.
+  cardBackPreview.style.background  = `radial-gradient(circle at center,${c.center} 0%,${c.edge1} 25%,${c.edge2} 50%,${c.edge3} 75%,${c.edge3} 80%)`;
+  cardBackPreview.style.border      = `${c.edgeWidth || 2}px solid ${c.outline}`;
+  cardBackPreview.style.boxSizing   = "border-box";
+  cardBackPreview.style.width       = "160px";
+  cardBackPreview.style.height      = "224px";
+  cardBackPreview.style.borderRadius = "12px";
+  cardBackPreview.style.boxShadow   = "0 0 10px rgba(0,0,0,0.6)";
 }
 
 function updateTablePreview() {
   if (!selectedSuitKey) return;
   tablecardPreview.innerHTML = "";
   const suitColor = suitColors[selectedSuitKey]?.symbol || "white";
-  const bgColor = suitColors[selectedSuitKey]?.background || "black";
-  const suitSize = +suitSizeSlider.value;
-  const rankSize = +rankSizeSlider.value;
-  const edgeWidth = backColors.edgeWidth;
-
-  tablecardPreview.style.cssText = `background-color:${bgColor};border:${edgeWidth}px solid ${backColors.outline};position:relative;box-sizing:border-box;`;
-
+  const bgColor   = suitColors[selectedSuitKey]?.background || "black";
+  const suitSz    = +suitSizeSlider.value;
+  const rankSz    = +rankSizeSlider.value;
+  const edgeWidth = backColors.edgeWidth || 2;
+  // Table cards are 45x65px in-game (ratio 1:1.44). Preview at ~1.67x = 75x105px.
+  tablecardPreview.style.cssText = [
+    "width:75px","height:105px","border-radius:8px","position:relative",
+    "box-sizing:border-box","overflow:hidden",
+    `background-color:${bgColor}`,
+    `border:${edgeWidth}px solid ${backColors.outline || "#333"}`,
+    "box-shadow:0 0 10px rgba(0,0,0,0.7)",
+  ].join(";");
   const suitElem = document.createElement("div");
   suitElem.className = "suit-symbol";
   suitElem.textContent = suitData.find(s => s.key === selectedSuitKey)?.symbol || "?";
-  suitElem.style.cssText = `color:${suitColor};font-size:${suitSize*0.45}px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);`;
+  suitElem.style.cssText = `color:${suitColor};font-size:${suitSz * 0.35}px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;user-select:none;`;
   tablecardPreview.appendChild(suitElem);
-
   const rankElem = document.createElement("div");
   rankElem.className = "rank";
   rankElem.textContent = "A";
-  rankElem.style.cssText = `color:${suitColor};font-size:${rankSize*0.35}px;position:absolute;top:0;right:4px;line-height:1;white-space:nowrap;user-select:none;pointer-events:none;`;
+  rankElem.style.cssText = `color:${suitColor};font-size:${rankSz * 0.28}px;position:absolute;top:4px;right:4px;line-height:1;white-space:nowrap;user-select:none;pointer-events:none;font-weight:bold;`;
   tablecardPreview.appendChild(rankElem);
 }
 
 function updateTableCardBackPreview() {
   const c = backColors;
-  tablecardBackPreview.style.background = `radial-gradient(circle at center,${c.center} 0%,${c.edge1} 25%,${c.edge2} 50%,${c.edge3} 75%,${c.edge3} 80%)`;
-  tablecardBackPreview.style.border = `${c.edgeWidth}px solid ${c.outline}`;
-  tablecardBackPreview.style.boxSizing = "border-box";
+  tablecardBackPreview.style.background   = `radial-gradient(circle at center,${c.center} 0%,${c.edge1} 25%,${c.edge2} 50%,${c.edge3} 75%,${c.edge3} 80%)`;
+  tablecardBackPreview.style.border       = `${c.edgeWidth || 2}px solid ${c.outline}`;
+  tablecardBackPreview.style.boxSizing    = "border-box";
+  tablecardBackPreview.style.width        = "75px";
+  tablecardBackPreview.style.height       = "105px";
+  tablecardBackPreview.style.borderRadius = "8px";
+  tablecardBackPreview.style.boxShadow    = "0 0 10px rgba(0,0,0,0.6)";
 }
 
 document.getElementById("extraSuitChk").addEventListener("change", () => {
@@ -386,12 +431,16 @@ function setCookie(name,value,days=365) {
 }
 
 function getCookie(name) {
-  const cookies = document.cookie.split("; ").reduce((acc,curr) => {
-    const [k,v] = curr.split("=");
-    acc[k] = decodeURIComponent(v);
-    return acc;
-  },{});
-  return cookies[name] || null;
+  if (!document.cookie) return null;
+  for (const pair of document.cookie.split('; ')) {
+    const i = pair.indexOf('=');
+    if (i === -1) continue;
+    const k = pair.substring(0, i);
+    if (k !== name) continue;
+    try { return decodeURIComponent(pair.substring(i + 1)); }
+    catch { return pair.substring(i + 1); }
+  }
+  return null;
 }
 
 function saveSettingsToCookies() {

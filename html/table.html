@@ -14,14 +14,27 @@
     <div id="contractsContainer"></div>
   </div>
 
+  <!-- Load order is strict: each file depends only on those above it. -->
+  <script src="../js/gameState.js"></script>
+  <script src="../js/validator.js"></script>
   <script src="../js/initDeck.js"></script>
-  <script src="../js/tableManager.js"></script>
-  <script src="../js/cardManager.js"></script>
+  <script src="../js/scoring.js"></script>
+  <script src="../js/cardRenderer.js"></script>
+  <script src="../js/dragDrop.js"></script>
+  <script src="../js/aiEngine.js"></script>
+  <script src="../js/roundManager.js"></script>
+
   <script>
-  const gs = localStorage.getItem('gameSetup');
-  let setup;
-  setup = JSON.parse(gs);
-  window.initTable(setup.playerNames);
+    // Guard: if setup was skipped (direct navigation), redirect rather than crash.
+    (function() {
+      const gs = localStorage.getItem('gameSetup');
+      if (!gs) { window.location.href = 'setup.html'; return; }
+      let setup;
+      try { setup = JSON.parse(gs); }
+      catch (e) { window.location.href = 'setup.html'; return; }
+      if (!setup?.playerNames?.length) { window.location.href = 'setup.html'; return; }
+      window.initTable(setup.playerNames);
+    })();
   </script>
 </body>
 </html>

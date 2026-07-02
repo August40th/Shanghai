@@ -184,7 +184,7 @@
   </div>
 
   <div id="content-cards" class="card" style="display:none">
-    <div class="card-customization" style="display: flex; gap: 180px;">
+    <div class="card-customization">
       <div style="flex: 1; display: flex; flex-direction: column; max-width: 260px;">
         <h3 style="margin-top: 0;">Face Design</h3>
         <div class="suits-row" id="suitsRow" style="margin-bottom: 16px;"></div>
@@ -217,14 +217,14 @@
               <button id="backEdgeColor3" class="color-square" style="background:#999; width: 32px; height: 32px;"></button>
               Radius 3
             </label>
-            <label style="display: center; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+            <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
               <button id="backEdgeOutlineColor" class="color-square" style="background:white; width: 32px; height: 32px;"></button>
               Edge
             </label>
           </div>
         </div>
       </div>
-      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 220px;">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 420px;">
         <div class="sliders-row" style="flex-direction: column; gap: 20px;">
           <label style="display:flex; flex-direction: column; font-weight: 600;">
             Suit Size:
@@ -235,11 +235,11 @@
             <input type="range" id="rankSizeSlider" min="55" max="80" value="65" style="width: 100%;">
           </label>
         </div>
-        <div style="display: flex; gap: 16px; flex-wrap: nowrap;">
-          <div id="cardBackPreview" class="card-back-preview" style="flex: 1; min-width: 140px;"></div>
-          <div id="cardPreview" class="card-preview" style="flex: 1; min-width: 140px;"></div>
-          <div id="tablecardBackPreview" class="tablecard-back-preview" style="flex: 1; min-width: 65px;"></div>
-          <div id="tablecardPreview" class="tablecard-preview" style="flex: 1; min-width: 65px;"></div>
+        <div style="display: flex; gap: 16px; flex-wrap: nowrap; align-items: flex-start;">
+          <div id="cardBackPreview" style="width:160px;height:224px;border-radius:12px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
+          <div id="cardPreview" class="card-preview" style="flex-shrink:0;"></div>
+          <div id="tablecardBackPreview" style="width:75px;height:105px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
+          <div id="tablecardPreview" class="tablecard-preview" style="flex-shrink:0;"></div>
         </div>
       </div>
     </div>
@@ -253,6 +253,5 @@
 <div id="tooltipBar" class="tooltip-bar">Hover over a control for help.</div>
 
 <script src="../js/setup.js"></script>
-<script src="../js/tableManager.js"></script>
 </body>
 </html>
