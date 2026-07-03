@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Shanghai Rummy</title>
+  <link rel="stylesheet" href="../css/setup.css">
+</head>
+<body>
+<header>
+  <div class="title">Shanghai</div>
+  <div class="underlines"><div></div><div class="thin"></div></div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" id="tab-summary">Quick Summary</button>
+  <button class="tab-btn" id="tab-custom">Custom Rules</button>
+  <button class="tab-btn" id="tab-players">Players</button>
+  <button class="tab-btn" id="tab-detailed">Detailed Rules</button>
+  <button class="tab-btn" id="tab-cards">Customize Cards</button>
+  <button class="start-btn">START GAME</button>
+</div>
+
+<div class="container">
+  <div id="content-summary" class="card">
+    <h2>Quick Summary</h2>
+    <div class="summary-content"></div>
+  </div>
+
+  <div id="content-custom" class="card" style="display:none">
+    <div class="rules-grid">
+      <div class="rule-column">
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="extraDeckChk">
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Adds 1 extra deck to the game">Extra Deck</div>
+        </div>
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="extraSuitChk">
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Adds a 5th ★ suit to each standard deck">Extra Suit (★)</div>
+        </div>
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="wrapRunsChk">
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Aces may be high AND low runs (K-A-2-3)">Wrap-Around Runs</div>
+        </div>
+      </div>
+      <div class="rule-column">
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="wildCardsChk" checked>
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Wild cards may represent any rank/suit">Wild Cards</div>
+        </div>
+        <div class="rule-item" style="gap:14px">
+          <button id="wildTypeBtn" class="wild-type-btn">Classic</button>
+          <div class="rule-label" data-tooltip="Classic: 3♦/3♥, Extra: 3♦/3♥/3★, or Jokers">Wild Type</div>
+        </div>
+        <div class="rule-item" style="gap:14px">
+          <button id="wildSwapBtn" class="wild-swap-btn">Off</button>
+          <div class="rule-label" data-tooltip="Players can swap a played wild card with the card it represents">Wild Swap</div>
+        </div>
+      </div>
+      <div class="rule-column">
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="fastBuyChk" checked>
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="First player to declare buy takes priority">Fast Buying</div>
+        </div>
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="optOutChk">
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Allow players to opt out of a declared buy">Opt Out</div>
+        </div>
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="selfDiscardChk">
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="A player can buy his/her own discard">Self-Discard Buying</div>
+        </div>
+        <div style="margin-top:8px">
+          <div class="clock-label" data-tooltip="Time available after a discard to declare a buy">Buying Clock (seconds)</div>
+          <input id="buyClockRange" type="range" min="5" max="40" value="16">
+          <div id="buyClockValue" style="min-width:30px;text-align:right">16</div>
+        </div>
+      </div>
+    </div>
+    <div class="rules-grid" style="margin-top:12px">
+      <div class="rule-column">
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="softShanghaiChk">
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="First to lay down, ends round later: +25 to others">Soft Shanghai</div>
+        </div>
+      </div>
+      <div class="rule-column">
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="hardShanghaiChk" checked>
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="First to lay down and out same turn: +50 to others">Shanghai</div>
+        </div>
+      </div>
+      <div class="rule-column">
+        <div class="rule-item">
+          <label class="compact-switch">
+            <input type="checkbox" id="finalShanghaiChk">
+            <span class="compact-slider"></span>
+          </label>
+          <div class="rule-label" data-tooltip="Shanghai on round 7: +100 to others">Final Shanghai</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="content-players" class="card players-card" style="display:none">
+    <div class="players-left">
+      <label>Player Name:
+        <input type="text" id="humanNameInput" value="Player1" style="width:60%;padding:6px;border-radius:6px;border:0;background:rgba(0,0,0,0.12);color:#fff">
+      </label>
+      <div style="font-weight:700">Computers</div>
+      <div class="player-controls">
+        <button id="decComp" class="btn" style="background: var(--on-red);color:white">-</button>
+        <div id="numCompDisplay" style="width:24px;text-align:center">3</div>
+        <button id="incComp" class="btn" style="background: var(--on-red);color:white">+</button>
+        <div style="width:12px"></div>
+        <button id="randomizeBtn" class="btn random-btn">Randomize Names</button>
+      </div>
+    </div>
+    <div class="players-grid" id="playersGrid"></div>
+  </div>
+
+  <div id="content-detailed" class="card" style="display:none">
+    <div class="detailed-card">
+      <div class="detailed-header">
+        <button class="arrow-btn arrow-left" id="prevDetailed">&#8592;</button>
+        <span id="detailedTitle">Summary</span>
+        <button class="arrow-btn arrow-right" id="nextDetailed">&#8594;</button>
+      </div>
+      <div class="rule-page active" data-title="Detailed Summary">
+        <p><strong>SHANGHAI</strong> is a rummy style card game containing seven rounds.</p>
+        <p>Players take turns with a mandatory action of drawing one card from either draw or discard pile, and discarding one card from his/her hand to the top of the discard pile</p>
+        <p>Each round players aim to collect that round's <strong>CONTRACT</strong> of <strong>SETS</strong> and/or <strong>RUNS</strong></p>
+        <p>A <strong>SET</strong> is 3+ cards of the same rank. A <strong>RUN</strong> is 4+ cards of the same suit in sequential order</p>
+        <p><strong>WILD CARDS</strong> can assume <strong>ANY</strong> rank and/or suit but count 20 points if left in hand at round end</p>
+        <p>Once per round, when a player has collected the <strong>ENTIRE CONTRACT</strong> he/she may <strong>LAY DOWN</strong> the contract face up</p>
+        <p>After laying down, players may <strong>PLAY</strong> cards onto any laid down contract</p>
+        <p>The first player to discard their final card ends the round scoring <strong>ZERO POINTS</strong></p>
+        <p>The objective is to have the <strong>LOWEST SCORE</strong> after seven rounds</p>      
+      </div>
+      <div class="rule-page" data-title="Player Actions">
+        <p><strong>Turn Phase:</strong> draw → lay down → play → discard</p>
+        <p><strong>Draw (mandatory)</strong>: Take a card from draw or discard pile</p>
+        <p><strong>Lay Down (optional)</strong>: Place the required contract face-up once per round</p>
+        <p><strong>Play (optional)</strong>: Play cards onto existing sets/runs after laying down</p>
+        <p><strong>Discard (mandatory)</strong>: Discard one card to end turn</p>
+        <p><strong>Buy (optional)</strong>: Take top discard between turns (draw extra card)</p>
+      </div>
+      <div class="rule-page" data-title="Contracts">
+        <p>Round 1: 2 Sets | Round 2: 1 Set + 1 Run | Round 3: 2 Runs</p>
+        <p>Round 4: 3 Sets | Round 5: 2 Sets + 1 Run | Round 6: 1 Set + 2 Runs</p>
+        <p>Round 7: 3 Runs</p>
+      </div>
+      <div class="rule-page" data-title="Scoring">
+        <p>Aces=15, Face cards=10, Number cards=face value, Wilds=20</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="content-cards" class="card" style="display:none">
+    <div class="card-customization">
+      <div style="flex: 1; display: flex; flex-direction: column; max-width: 260px;">
+        <h3 style="margin-top: 0;">Face Design</h3>
+        <div class="suits-row" id="suitsRow" style="margin-bottom: 16px;"></div>
+        <div style="display: flex; gap: 32px; margin-bottom: 12px;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <button id="symbolColorBtn" class="color-select-btn" disabled style="width: 40px; height: 40px; padding: 0; border-radius: 6px;"></button>
+            <span style="font-weight: 600; user-select: none;">Symbol</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <button id="bgColorBtn" class="color-select-btn" disabled style="width: 40px; height: 40px; padding: 0; border-radius: 6px;"></button>
+            <span style="font-weight: 600; user-select: none;">Background</span>
+          </div>
+        </div>
+        <div class="card-back-customization" style="display: flex; flex-direction: column; gap: 10px;">
+          <h3 style="margin-top: 0;">Back Design</h3>
+          <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+            <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+              <button id="backCenterColor" class="color-square" style="background:black; width: 32px; height: 32px;"></button>
+              Center
+            </label>
+            <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+              <button id="backEdgeColor1" class="color-square" style="background:#333; width: 32px; height: 32px;"></button>
+              Radius 1
+            </label>
+            <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+              <button id="backEdgeColor2" class="color-square" style="background:#666; width: 32px; height: 32px;"></button>
+              Radius 2
+            </label>
+            <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+              <button id="backEdgeColor3" class="color-square" style="background:#999; width: 32px; height: 32px;"></button>
+              Radius 3
+            </label>
+            <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
+              <button id="backEdgeOutlineColor" class="color-square" style="background:white; width: 32px; height: 32px;"></button>
+              Edge
+            </label>
+          </div>
+        </div>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 420px;">
+        <div class="sliders-row" style="flex-direction: column; gap: 20px;">
+          <label style="display:flex; flex-direction: column; font-weight: 600;">
+            Suit Size:
+            <input type="range" id="suitSizeSlider" min="80" max="120" value="90" style="width: 100%;">
+          </label>
+          <label style="display:flex; flex-direction: column; font-weight: 600;">
+            Rank Size:
+            <input type="range" id="rankSizeSlider" min="55" max="80" value="65" style="width: 100%;">
+          </label>
+        </div>
+        <div style="display: flex; gap: 16px; flex-wrap: nowrap; align-items: flex-start;">
+          <div id="cardBackPreview" style="width:160px;height:224px;border-radius:12px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
+          <div id="cardPreview" class="card-preview" style="flex-shrink:0;"></div>
+          <div id="tablecardBackPreview" style="width:75px;height:105px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
+          <div id="tablecardPreview" class="tablecard-preview" style="flex-shrink:0;"></div>
+        </div>
+      </div>
+    </div>
+    <div id="colorPickerPopup" class="color-picker-popup" style="display:none">
+      <div class="colors-grid"></div>
+      <button id="closeColorPickerBtn" class="close-color-picker">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="tooltipBar" class="tooltip-bar">Hover over a control for help.</div>
+
+<script src="../js/setup.js"></script>
+</body>
+</html>
