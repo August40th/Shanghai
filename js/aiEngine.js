@@ -115,7 +115,12 @@
         const hand          = hands[player] || [];
         const currentStaged = subcontractCards[player] || [];
         const allCards      = [...hand, ...currentStaged];
-        const subAreas      = window.getSubcontractSubAreas(playerIdx);
+        const subAreas = window.getSubcontractSubAreas(playerIdx);
+        if (!subAreas.length) {
+          console.warn(`AI ${playerIdx}: no subcontract areas found, skipping stage`);
+          resolve();
+          return;
+        }
 
         const optimalStaging = _findOptimalStaging(allCards, roundIndex, subAreas);
         _applyStaging(playerIdx, optimalStaging);
@@ -295,33 +300,44 @@
     const { players, subcontractCards, laidDownPlayers } = getState();
     const player = players[playerIdx];
 
-    // If laid down, every hand card is fair game — pick highest point value.
+    // Wilds are never discarded — always worth keeping.
+    const nonWilds = hand.filter(c => !isWild(c));
+
+    // If laid down, pick highest point non-wild card, but avoid gifting a card
+    // that another laid-down player can immediately play on their contract.
     if (laidDownPlayers.has(playerIdx)) {
-      return _highestPoints(hand);
+      const safe = nonWilds.filter(c => !_isGiftCard(c, playerIdx));
+      return _highestPoints(safe.length ? safe : nonWilds) || _highestPoints(hand);
     }
 
-    // Cards currently staged in subcontract areas — keyed by _id.
     const stagedIds = new Set(
       (subcontractCards[player] || []).map(c => c._id)
     );
-
-    // Cards in hand that are NOT currently staged.
-    const unstagedHand = hand.filter(c => !stagedIds.has(c._id));
+    const unstagedHand = nonWilds.filter(c => !stagedIds.has(c._id));
 
     if (unstagedHand.length > 0) {
-      // Filter out cards that either:
-      // (a) would help complete a staged contract group, OR
-      // (b) are part of a partial set/run entirely within the unstaged hand.
       const notUseful = unstagedHand.filter(c =>
         !_cardHelpsStaging(c, playerIdx) &&
         !_cardHelpsUnstagedHand(c, unstagedHand)
       );
-      const pool = notUseful.length > 0 ? notUseful : unstagedHand;
+      // Also try to avoid gifting a card to a laid-down opponent.
+      const notGifts   = notUseful.filter(c => !_isGiftCard(c, playerIdx));
+      const pool = notGifts.length > 0 ? notGifts
+                 : notUseful.length > 0 ? notUseful
+                 : unstagedHand;
       return _highestPoints(pool);
     }
 
-    // Fallback: all cards are staged — discard from the overflow.
-    return _highestPoints(hand);
+    return _highestPoints(nonWilds) || null;
+  }
+
+  // Returns true if discarding `card` would gift it directly to a laid-down
+  // opponent who can immediately play it on their contract.
+  function _isGiftCard(card, discardingIdx) {
+    const target = window.validator.canPlayOnExistingContracts(card, discardingIdx);
+    if (!target) return false;
+    // Only a gift if the beneficiary is a different player.
+    return target.playerIdx !== discardingIdx;
   }
 
   // Returns true if `card` is part of a partial group within the unstaged hand.
@@ -382,21 +398,39 @@
   }
 
   // ─── Draw decision helper ─────────────────────────────────────────────────
+  // Decides whether the top discard card is worth taking over drawing blind.
+  // Strategy extends beyond active contract building — a laid-down player
+  // should take a card that extends what they can play on contracts this turn
+  // or in future turns (e.g. holding 4-5♥ with a laid-down 7-8-9-10♥ run,
+  // a 6♥ in the discard is absolutely worth taking even though it doesn't
+  // directly extend the laid-down run yet).
 
   function _discardHelpsAI(card, hand, playerIdx, hasLaid) {
     const { players, subcontractCards, roundIndex } = getState();
     const contractCards = subcontractCards[players[playerIdx]] || [];
 
     if (hasLaid) {
-      return !!window.validator.canPlayOnExistingContracts(card, playerIdx);
+      // Can the card be played directly onto any laid-down contract now?
+      if (window.validator.canPlayOnExistingContracts(card, playerIdx)) return true;
+
+      // Can the card combine with cards currently in hand to extend a
+      // laid-down contract in a future play sequence?
+      // e.g. holding 4-5♥, laid-down run is 7-8-9-10♥, discard is 6♥ →
+      // taking 6♥ means next turn we play 4-5-6♥ onto the run.
+      if (_cardExtendsHandSequence(card, hand, playerIdx)) return true;
+
+      return false;
     }
 
-    const required = ROUND_REQUIREMENTS[roundIndex] || { sets: 0, runs: 0 };
-    const status   = _analyzeContractStatus(contractCards, required);
+    const required       = ROUND_REQUIREMENTS[roundIndex] || { sets: 0, runs: 0 };
+    const status         = _analyzeContractStatus(contractCards, required);
     const contractComplete = status.needsSets <= 0 && status.needsRuns <= 0;
 
     if (contractComplete) {
-      return _canExtendStagedContract(card, contractCards);
+      // Contract already staged — only take if card extends a staged group
+      // or helps build a playable sequence for post-laydown.
+      return _canExtendStagedContract(card, contractCards) ||
+             _cardExtendsHandSequence(card, hand, playerIdx);
     }
 
     return (
@@ -405,16 +439,189 @@
     );
   }
 
-  // ─── Staging algorithm ────────────────────────────────────────────────────
-  // Assigns cards from allCards into subcontract area slots to best satisfy
-  // the round contract.  Runs are prioritised first (harder to complete),
-  // then sets.
-  // BUG FIX: uses card._id for deduplication instead of rank+suit string, so
-  // duplicate cards in multi-deck games are handled correctly.
+  // Returns true if `card` combines with cards in `hand` to form a sequence
+  // that could be played onto any currently laid-down contract on the table.
+  // This captures the "holding 4-5♥ + discard is 6♥" pattern.
+  function _cardExtendsHandSequence(card, hand, playerIdx) {
+    const { players, subcontractCards, laidDownPlayers } = getState();
+    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
+                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
+
+    // Build potential plays: the new card combined with same-suit hand cards.
+    const sameSuitHand = isWild(card) ? hand : hand.filter(c =>
+      !isWild(c) && c.suit === card.suit
+    );
+    if (!sameSuitHand.length) return false;
+
+    const combined = [...sameSuitHand, card];
+
+    // Check if this combined group, or any subset of it, can be played
+    // sequentially onto any laid-down run.
+    for (const [pi, pname] of getState().players.entries()) {
+      if (!laidDownPlayers.has(pi)) continue;
+      const subAreas = window.getSubcontractSubAreas(pi);
+      for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
+        const label     = (subAreas[areaIdx].dataset.label || '').toLowerCase();
+        if (!label.includes('run')) continue;
+        const areaCards = (getState().subcontractCards[pname] || []).filter(c => c.subArea === areaIdx);
+        if (!areaCards.length) continue;
+        const nonWilds  = areaCards.filter(c => !isWild(c));
+        if (!nonWilds.length) continue;
+        const runSuit   = nonWilds[0].suit;
+        if (!isWild(card) && card.suit !== runSuit) continue;
+        const lowVal    = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
+        const highVal   = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
+        const cardVal   = isWild(card) ? 0 : (rankValues[card.rank] || 0);
+        // The drawn card plus same-suit hand cards form a bridge to the run.
+        const relevant  = combined.filter(c =>
+          isWild(c) ||
+          ((rankValues[c.rank] || 0) >= lowVal - combined.length &&
+           (rankValues[c.rank] || 0) <= highVal + combined.length)
+        );
+        if (relevant.length >= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  // ─── Contract status helpers ──────────────────────────────────────────────
+
+  function _analyzeContractStatus(contractCards, required) {
+    const byArea = {};
+    contractCards.forEach(c => {
+      if (!byArea[c.subArea]) byArea[c.subArea] = [];
+      byArea[c.subArea].push(c);
+    });
+
+    let validSets = 0, validRuns = 0;
+    Object.values(byArea).forEach(areaCards => {
+      if (isValidSet(areaCards))      validSets++;
+      else if (isValidRun(areaCards)) validRuns++;
+    });
+
+    return {
+      validSets, validRuns,
+      needsSets: required.sets - validSets,
+      needsRuns: required.runs - validRuns
+    };
+  }
+
+  function _canExtendStagedContract(card, contractCards) {
+    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
+                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
+    const byArea = {};
+    contractCards.forEach(c => {
+      if (!byArea[c.subArea]) byArea[c.subArea] = [];
+      byArea[c.subArea].push(c);
+    });
+
+    for (const areaCards of Object.values(byArea)) {
+      const anchor   = areaCards.find(c => !isWild(c));
+      if (!anchor) continue;
+
+      // Set extension — rank must match anchor.
+      if (isWild(card) || card.rank === anchor.rank) {
+        if (isValidSet([...areaCards, card])) return true;
+      }
+
+      // Run extension — check low and high ends explicitly.
+      const nonWilds = areaCards.filter(c => !isWild(c));
+      if (!nonWilds.length) continue;
+      const runSuit  = nonWilds[0].suit;
+      if (!isWild(card) && card.suit !== runSuit) continue;
+      const lowVal   = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
+      const highVal  = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
+      const cardVal  = rankValues[card.rank] || 0;
+      if (isWild(card) || cardVal === lowVal - 1 || cardVal === highVal + 1) return true;
+    }
+    return false;
+  }
+
+  function _wouldCompleteContractGroup(card, contractCards, hand, status) {
+    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
+                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
+
+    // Set completion — needs matching rank cards in staged + hand.
+    if (status.needsSets > 0) {
+      const sameRankStaged = contractCards.filter(c => !isWild(c) && c.rank === card.rank);
+      const sameRankHand   = hand.filter(c => !isWild(c) && c.rank === card.rank);
+      const totalSameRank  = sameRankStaged.length + sameRankHand.length;
+      // Drawing this card means we have totalSameRank+1 of this rank — enough for a set?
+      if (totalSameRank >= 2) return true; // completes a 3-card set minimum
+    }
+
+    // Run completion — check whether the card slots into a staged run group
+    // at either end, or completes a run combined with hand cards.
+    if (status.needsRuns > 0) {
+      const byArea = {};
+      contractCards.forEach(c => {
+        if (!byArea[c.subArea]) byArea[c.subArea] = [];
+        byArea[c.subArea].push(c);
+      });
+
+      for (const areaCards of Object.values(byArea)) {
+        const nonWilds = areaCards.filter(c => !isWild(c));
+        if (!nonWilds.length) continue;
+        const runSuit  = nonWilds[0].suit;
+        if (!isWild(card) && card.suit !== runSuit) continue;
+        const lowVal   = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
+        const highVal  = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
+        const cardVal  = rankValues[card.rank] || 0;
+        if (isWild(card) || cardVal === lowVal - 1 || cardVal === highVal + 1) return true;
+      }
+
+      // Does the card combine with same-suit hand cards to form or extend a run?
+      if (!isWild(card)) {
+        const sameSuitHand = hand.filter(c => !isWild(c) && c.suit === card.suit);
+        if (sameSuitHand.length >= 2) {
+          // Sort by rank value and check if card fits at either end.
+          const vals = sameSuitHand.map(c => rankValues[c.rank] || 0).sort((a, b) => a - b);
+          const cardVal = rankValues[card.rank] || 0;
+          const low  = vals[0];
+          const high = vals[vals.length - 1];
+          if (cardVal === low - 1 || cardVal === high + 1 ||
+              (cardVal > low && cardVal < high)) return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function _formsNewGroupInHand(card, hand, status) {
+    // Sets: worth taking if there is already 1+ of the same rank in hand —
+    // builds a pair which is one step from a complete set.
+    if (status.needsSets > 0) {
+      const sameRank = hand.filter(c => !isWild(c) && c.rank === card.rank);
+      if (sameRank.length >= 1) return true;
+    }
+
+    // Runs: worth taking if the card is within 3 ranks of a same-suit card
+    // in hand — reasonable run seed even at early stages.
+    if (status.needsRuns > 0 && !isWild(card)) {
+      const sameSuit = hand.filter(c => !isWild(c) && c.suit === card.suit);
+      if (sameSuit.length >= 1) {
+        const cardVal    = RANK_VAL[card.rank] || 0;
+        const suitValues = sameSuit.map(c => RANK_VAL[c.rank] || 0);
+        if (suitValues.some(v => Math.abs(v - cardVal) <= 3)) return true;
+      }
+    }
+
+    return false;
+  }
+  // Finds the optimal assignment of cards to contract sub-areas by trying all
+  // sensible wild allocations across run and set slots, then picking the
+  // combination that satisfies the most contract requirements.
+  //
+  // Previously the greedy "runs consume all wilds first" approach caused two bugs:
+  //   1. Wilds weren't split optimally between runs and sets (e.g. 1 wild
+  //      needed for a diamond run, 1 for a tens set — greedy gave both to
+  //      the run).
+  //   2. Ace-swap: rank-group iteration order determined which Ace went into
+  //      the set vs the run, leading to sub-optimal choices.
 
   function _findOptimalStaging(allCards, roundIndex, subAreas) {
     const numAreas   = subAreas.length;
-    const staging    = Array.from({ length: numAreas }, () => []);
     const areaLabels = subAreas.map(sub => {
       const label = (sub.dataset.label || '').toLowerCase();
       return { isSet: label.includes('set'), isRun: label.includes('run') };
@@ -423,77 +630,109 @@
     const setAreas = areaLabels.map((l, i) => l.isSet ? i : -1).filter(i => i !== -1);
     const runAreas = areaLabels.map((l, i) => l.isRun ? i : -1).filter(i => i !== -1);
 
-    // Separate wilds from regular cards; work on copies so originals are safe.
     const wilds    = allCards.filter(isWild).map(c => ({ ...c }));
     const regulars = allCards.filter(c => !isWild(c)).map(c => ({ ...c }));
+    const totalWilds = wilds.length;
 
-    // Track used cards by _id to handle duplicates correctly.
-    const usedIds = new Set();
+    // Pre-compute: for each number of wilds allocated to runs (0..totalWilds),
+    // find the best run(s) that can be built, and the best set(s) with the
+    // remaining wilds. Score = (completeRuns * 1000) + (completeSets * 100) +
+    // partial credit. Pick the allocation with the highest score.
 
-    // ── Runs first ──────────────────────────────────────────────────────────
-    runAreas.forEach(areaIdx => {
-      const available = regulars.filter(c => !usedIds.has(c._id));
-      const availWilds = wilds.filter(c => !usedIds.has(c._id));
-      const bestRun = _findBestRun(available, availWilds);
-      if (bestRun) {
-        staging[areaIdx] = bestRun.cards;
-        bestRun.cards.forEach(c => usedIds.add(c._id));
-      }
-    });
+    let bestScore   = -1;
+    let bestStaging = Array.from({ length: numAreas }, () => []);
 
-    // ── Sets second ─────────────────────────────────────────────────────────
-    // Group remaining regular cards by rank.
-    const rankGroups = {};
-    regulars.filter(c => !usedIds.has(c._id)).forEach(c => {
-      if (!rankGroups[c.rank]) rankGroups[c.rank] = [];
-      rankGroups[c.rank].push(c);
-    });
+    // We only need to try allocating 0..totalWilds wilds to runs.
+    const maxWildsForRuns = Math.min(totalWilds, runAreas.length * 2);
 
-    // Score each candidate set (complete first, then partial).
-    const setCandidates = [];
-    const remainingWilds = wilds.filter(c => !usedIds.has(c._id));
+    for (let wildsForRuns = 0; wildsForRuns <= maxWildsForRuns; wildsForRuns++) {
+      const runWilds  = wilds.slice(0, wildsForRuns);
+      const setWilds  = wilds.slice(wildsForRuns);
 
-    Object.entries(rankGroups).forEach(([rank, cards]) => {
-      const base = RANK_VAL[rank] || 5;
-      if (cards.length >= 3) {
-        setCandidates.push({ rank, cards: cards.slice(0, 3), complete: true,  score: base * 10 + 100, wildsNeeded: 0 });
-      } else if (cards.length === 2 && remainingWilds.length >= 1) {
-        setCandidates.push({ rank, cards: [...cards, remainingWilds[0]], complete: true,  score: base * 10 + 90, wildsNeeded: 1 });
-      } else if (cards.length === 2) {
-        setCandidates.push({ rank, cards: [...cards], complete: false, score: base * 5, wildsNeeded: 0 });
-      } else if (cards.length === 1 && remainingWilds.length >= 2) {
-        setCandidates.push({ rank, cards: [cards[0], remainingWilds[0], remainingWilds[1]], complete: true, score: base * 10 + 80, wildsNeeded: 2 });
-      }
-    });
+      const staging   = Array.from({ length: numAreas }, () => []);
+      const usedIds   = new Set();
+      let score       = 0;
 
-    setCandidates.sort((a, b) => b.score - a.score);
+      // ── Assign runs ────────────────────────────────────────────────────
+      runAreas.forEach(areaIdx => {
+        const available     = regulars.filter(c => !usedIds.has(c._id));
+        const availRunWilds = runWilds.filter(c => !usedIds.has(c._id));
+        const bestRun       = _findBestRun(available, availRunWilds);
+        if (bestRun) {
+          staging[areaIdx] = bestRun.cards;
+          bestRun.cards.forEach(c => usedIds.add(c._id));
+          const complete = isValidRun(bestRun.cards);
+          score += complete ? 1000 : bestRun.cards.length * 5;
+        }
+      });
 
-    // Assign complete sets to set areas.
-    setAreas.forEach(areaIdx => {
-      for (const candidate of setCandidates) {
-        if (!candidate.complete || candidate.assigned) continue;
-        const allAvailable = candidate.cards.every(c => !usedIds.has(c._id));
-        if (allAvailable) {
+      // ── Assign sets ────────────────────────────────────────────────────
+      // Group remaining regular cards by rank.
+      const rankGroups = {};
+      regulars.filter(c => !usedIds.has(c._id)).forEach(c => {
+        if (!rankGroups[c.rank]) rankGroups[c.rank] = [];
+        rankGroups[c.rank].push(c);
+      });
+
+      // Build set candidates sorted by completeness then point value.
+      const remainingSetWilds = setWilds.filter(c => !usedIds.has(c._id));
+      const setCandidates = [];
+      Object.entries(rankGroups).forEach(([rank, cards]) => {
+        const base = RANK_VAL[rank] || 5;
+        if (cards.length >= 3) {
+          setCandidates.push({ rank, cards: cards.slice(0, 3), complete: true,  score: base * 10 + 100, wildsNeeded: 0 });
+        } else if (cards.length === 2 && remainingSetWilds.length >= 1) {
+          setCandidates.push({ rank, cards: [...cards, remainingSetWilds[0]], complete: true,  score: base * 10 + 90, wildsNeeded: 1 });
+        } else if (cards.length === 2) {
+          setCandidates.push({ rank, cards: [...cards], complete: false, score: base * 5, wildsNeeded: 0 });
+        } else if (cards.length === 1 && remainingSetWilds.length >= 2) {
+          setCandidates.push({ rank, cards: [cards[0], remainingSetWilds[0], remainingSetWilds[1]], complete: true, score: base * 10 + 80, wildsNeeded: 2 });
+        } else if (cards.length === 1) {
+          setCandidates.push({ rank, cards: [...cards], complete: false, score: base * 2, wildsNeeded: 0 });
+        }
+      });
+      setCandidates.sort((a, b) => b.score - a.score);
+
+      let wildsUsedInSets = 0;
+      setAreas.forEach(areaIdx => {
+        for (const candidate of setCandidates) {
+          if (candidate.assigned) continue;
+          if (wildsUsedInSets + candidate.wildsNeeded > remainingSetWilds.length) continue;
+          const allAvailable = candidate.cards.every(c => !usedIds.has(c._id));
+          if (!allAvailable) continue;
           staging[areaIdx] = [...candidate.cards];
           candidate.cards.forEach(c => usedIds.add(c._id));
           candidate.assigned = true;
+          wildsUsedInSets += candidate.wildsNeeded;
+          score += candidate.complete ? 100 : candidate.cards.length * 2;
           break;
         }
-      }
-    });
+      });
 
-    // Fill any still-empty set areas with the best partial (pair) available.
-    setAreas.forEach(areaIdx => {
-      if (staging[areaIdx].length > 0) return;
-      const partial = setCandidates.find(c => !c.complete && !c.assigned);
-      if (partial) {
-        staging[areaIdx] = [...partial.cards];
-        partial.cards.forEach(c => usedIds.add(c._id));
-        partial.assigned = true;
-      }
-    });
+      // Fill empty set areas with best partial.
+      setAreas.forEach(areaIdx => {
+        if (staging[areaIdx].length > 0) return;
+        for (const candidate of setCandidates) {
+          if (candidate.assigned) continue;
+          const allAvailable = candidate.cards
+            .filter(c => !isWild(c))
+            .every(c => !usedIds.has(c._id));
+          if (!allAvailable) continue;
+          staging[areaIdx] = [...candidate.cards.filter(c => !isWild(c))];
+          staging[areaIdx].forEach(c => usedIds.add(c._id));
+          candidate.assigned = true;
+          score += staging[areaIdx].length;
+          break;
+        }
+      });
 
-    return staging;
+      if (score > bestScore) {
+        bestScore   = score;
+        bestStaging = staging.map(a => [...a]);
+      }
+    }
+
+    return bestStaging;
   }
 
   // ─── Apply staging to gameState ───────────────────────────────────────────
@@ -536,7 +775,7 @@
       const sorted = [...cards].sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
 
       for (let i = 0; i < sorted.length; i++) {
-        for (let j = i + 3; j <= sorted.length && j <= i + 8; j++) {
+        for (let j = i + 4; j <= sorted.length && j <= i + 8; j++) {
           const subset = sorted.slice(i, j);
           const gaps   = _countGaps(subset);
           if (gaps > availableWilds.length) continue;
@@ -597,109 +836,6 @@
       ? nonWilds.reduce((s, c) => s + (RANK_VAL[c.rank] || 5), 0) / nonWilds.length
       : 5;
     return cards.length * 15 + avgRank;
-  }
-
-  // ─── Contract status helpers ──────────────────────────────────────────────
-
-  function _analyzeContractStatus(contractCards, required) {
-    const byArea = {};
-    contractCards.forEach(c => {
-      if (!byArea[c.subArea]) byArea[c.subArea] = [];
-      byArea[c.subArea].push(c);
-    });
-
-    let validSets = 0, validRuns = 0;
-    Object.values(byArea).forEach(areaCards => {
-      if (isValidSet(areaCards))      validSets++;
-      else if (isValidRun(areaCards)) validRuns++;
-    });
-
-    return {
-      validSets, validRuns,
-      needsSets: required.sets - validSets,
-      needsRuns: required.runs - validRuns
-    };
-  }
-
-  function _canExtendStagedContract(card, contractCards) {
-    const byArea = {};
-    contractCards.forEach(c => {
-      if (!byArea[c.subArea]) byArea[c.subArea] = [];
-      byArea[c.subArea].push(c);
-    });
-
-    for (const areaCards of Object.values(byArea)) {
-      const anchor = areaCards.find(c => !isWild(c));
-      if (!anchor) continue;
-
-      // Set extension.
-      if ((isWild(card) || card.rank === anchor.rank) && isValidSet([...areaCards, card])) return true;
-
-      // Run extension.
-      const nonWilds = areaCards.filter(c => !isWild(c));
-      if (nonWilds.length > 0 && (isWild(card) || card.suit === nonWilds[0].suit)) {
-        const testRun = [...areaCards, card];
-        if (isValidRun(testRun)) return true;
-      }
-    }
-    return false;
-  }
-
-  function _wouldCompleteContractGroup(card, contractCards, hand, status) {
-    const sameRankInContract = contractCards.filter(c => c.rank === card.rank);
-
-    // Would adding this card to staged same-rank group complete a set?
-    if (sameRankInContract.length === 2 && status.needsSets > 0) return true;
-
-    // Would adding to staged same-suit group complete a run?
-    const sameSuitInContract = contractCards.filter(c => c.suit === card.suit);
-    if (sameSuitInContract.length >= 3 && status.needsRuns > 0) {
-      if (isValidRun([...sameSuitInContract, card])) return true;
-    }
-
-    // Would combining with hand cards complete a set?
-    if (status.needsSets > 0) {
-      const totalSameRank = hand.filter(c => c.rank === card.rank).length + sameRankInContract.length;
-      if (totalSameRank >= 2 && isValidSet([...hand.filter(c => c.rank === card.rank), ...sameRankInContract, card])) return true;
-    }
-
-    // Would combining with hand cards complete a run?
-    if (status.needsRuns > 0) {
-      const sameSuitInHand = hand.filter(c => c.suit === card.suit);
-      if (sameSuitInHand.length + sameSuitInContract.length >= 3) {
-        if (isValidRun([...sameSuitInHand, ...sameSuitInContract, card])) return true;
-      }
-    }
-
-    return false;
-  }
-
-  function _formsNewGroupInHand(card, hand, status) {
-    if (status.needsSets > 0) {
-      const sameRank = hand.filter(c => c.rank === card.rank);
-      // Worth taking for a set only if there are already 2 of this rank
-      // in hand (the new card would complete a 3-card set).
-      if (sameRank.length >= 2 && isValidSet([...sameRank, card])) return true;
-    }
-
-    if (status.needsRuns > 0) {
-      const sameSuit = hand.filter(c => c.suit === card.suit && !isWild(c));
-      // A complete run is always worth taking.
-      if (sameSuit.length >= 3 && isValidRun([...sameSuit, card])) return true;
-
-      // Worth taking for a run if there is already at least 1 same-suit card
-      // in hand — together they form a 2-card seed toward a run.
-      // (Single-card seeds are too speculative; pairs are reasonable building blocks.)
-      if (sameSuit.length >= 1) {
-        const cardVal    = RANK_VAL[card.rank] || 0;
-        const suitValues = sameSuit.map(c => RANK_VAL[c.rank] || 0);
-        // Only take if the card is directly adjacent (gap of 1) to an
-        // existing same-suit card — not just in the same suit at any position.
-        if (suitValues.some(v => Math.abs(v - cardVal) <= 2)) return true;
-      }
-    }
-
-    return false;
   }
 
   // ─── Export ───────────────────────────────────────────────────────────────
