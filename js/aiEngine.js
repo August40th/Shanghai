@@ -83,12 +83,19 @@
         const topDiscard = discardPile[discardPile.length - 1];
 
         let drawSource = 'draw';
+        let drawReason = 'drew blind from the deck.';
         if (topDiscard && _discardHelpsAI(topDiscard, hand, playerIdx, hasLaid)) {
           drawSource = 'discard';
+          drawReason = _explainDiscardDraw(topDiscard, hand, playerIdx, hasLaid);
           console.log(`AI ${playerIdx}: taking discard ${topDiscard.rank}${topDiscard.suit}`);
         }
 
         window.drawCardFrom(drawSource, playerIdx);
+        if (drawSource === 'draw') {
+          window.gameLog?.logReason(players[playerIdx], 'No useful discard — drew blind from the deck.');
+        } else {
+          window.gameLog?.logReason(players[playerIdx], drawReason);
+        }
         resolve();
       }, 800);
     });
@@ -125,6 +132,14 @@
         const optimalStaging = _findOptimalStaging(allCards, roundIndex, subAreas);
         _applyStaging(playerIdx, optimalStaging);
 
+        // Log staging decisions.
+        const subAreaLabels = subAreas.map(s => s.dataset.label || '?');
+        const stagedByArea  = optimalStaging.map((cards, i) => ({
+          label: subAreaLabels[i] || `Area ${i}`,
+          cards
+        }));
+        window.gameLog?.logStage(players[playerIdx], stagedByArea);
+
         // Re-render this player's hand (non-draggable — AI cards)
         const handDiv = document.getElementById(`hand-${playerIdx}`);
         if (handDiv) {
@@ -156,6 +171,16 @@
         if (!isComplete) { resolve(false); return; }
 
         console.log(`AI ${playerIdx}: laying down`);
+
+        // Log the lay-down.
+        const subAreas   = window.getSubcontractSubAreas(playerIdx);
+        const flatSubs   = getState().subcontractCards[players[playerIdx]] || [];
+        const logAreas   = subAreas.map((sub, areaIdx) => ({
+          label: sub.dataset.label || `Area ${areaIdx}`,
+          cards: flatSubs.filter(c => c.subArea === areaIdx)
+        }));
+        window.gameLog?.logLayDown(players[playerIdx], logAreas);
+        window.gameLog?.logReason(players[playerIdx], 'Contract complete — laying down.');
 
         // Mark laid down in gameState.
         const newSet = new Set(getState().laidDownPlayers);
@@ -237,6 +262,10 @@
 
             newSub[owner] = flatOwner;
             setState({ hands: newHands, subcontractCards: newSub });
+            // Log the play.
+            const sub = window.getSubcontractSubAreas(target.playerIdx)[target.areaIdx];
+            const areaLabel = sub?.dataset.label || `Area ${target.areaIdx}`;
+            window.gameLog?.logPlay(player, card, players[target.playerIdx], areaLabel);
             console.log(`AI ${playerIdx}: played ${card.rank}${card.suit} onto player ${target.playerIdx} area ${target.areaIdx}`);
             played = true;
             break; // Restart loop with fresh hand after each play.
@@ -277,6 +306,8 @@
         const cardToDiscard = _chooseDiscard(hand, playerIdx);
         if (!cardToDiscard) { resolve(); return; }
 
+        const discardReason = _explainDiscard(cardToDiscard, hand, playerIdx);
+        window.gameLog?.logReason(players[playerIdx], discardReason);
         console.log(`AI ${playerIdx}: discarding ${cardToDiscard.rank}${cardToDiscard.suit}`);
 
         // Use the shared discard path so resetTurnState, buy clock,
@@ -1110,6 +1141,82 @@
     }
 
     return false;
+  }
+
+  // ─── Reasoning explanation helpers (for game log) ────────────────────────
+
+  function _explainDiscardDraw(card, hand, playerIdx, hasLaid) {
+    const { players, subcontractCards, roundIndex } = getState();
+    const contractCards = subcontractCards[players[playerIdx]] || [];
+
+    if (hasLaid) {
+      if (window.validator.canPlayOnExistingContracts(card, playerIdx)) {
+        return `took ${card.rank}${card.suit} from discards — can play it directly onto a laid-down contract.`;
+      }
+      return `took ${card.rank}${card.suit} from discards — extends a hand sequence toward a laid-down run.`;
+    }
+
+    const required = ROUND_REQUIREMENTS[roundIndex] || { sets: 0, runs: 0 };
+    const status   = _analyzeContractStatus(contractCards, required);
+
+    if (_wouldCompleteContractGroup(card, contractCards, hand, status)) {
+      if (status.needsSets > 0 && !isWild(card)) {
+        const sameRankStaged = contractCards.filter(c => !isWild(c) && c.rank === card.rank).length;
+        const sameRankHand   = hand.filter(c => !isWild(c) && c.rank === card.rank).length;
+        if (sameRankStaged + sameRankHand >= 2) {
+          return `took ${card.rank}${card.suit} from discards — completes a set of ${card.rank}s.`;
+        }
+      }
+      return `took ${card.rank}${card.suit} from discards — completes or significantly advances the contract.`;
+    }
+
+    if (status.needsRuns > 0 && !isWild(card)) {
+      const sameSuit = hand.filter(c => !isWild(c) && c.suit === card.suit);
+      if (sameSuit.length >= 1) {
+        return `took ${card.rank}${card.suit} from discards — builds toward a ${card.suit} run (${sameSuit.length} ${card.suit} card${sameSuit.length > 1 ? 's' : ''} in hand).`;
+      }
+    }
+
+    if (status.needsSets > 0) {
+      const sameRank = hand.filter(c => !isWild(c) && c.rank === card.rank);
+      if (sameRank.length >= 1) {
+        return `took ${card.rank}${card.suit} from discards — pairs with ${sameRank.length} existing ${card.rank}${sameRank.length > 1 ? 's' : ''} toward a set.`;
+      }
+    }
+
+    return `took ${card.rank}${card.suit} from discards — advances the contract.`;
+  }
+
+  function _explainDiscard(card, hand, playerIdx) {
+    const { players, subcontractCards, laidDownPlayers } = getState();
+    const player   = players[playerIdx];
+    const hasLaid  = laidDownPlayers.has(playerIdx);
+    const stagedIds = new Set((subcontractCards[player] || []).map(c => c._id));
+    const pts      = window.scoring?.calculateCardPoints(card) || 0;
+
+    if (hasLaid) {
+      if (_isGiftCard(card, playerIdx)) {
+        return `discarding ${card.rank}${card.suit} (${pts}pts) — high value but would gift to opponent; choosing lesser evil.`;
+      }
+      return `discarding ${card.rank}${card.suit} (${pts}pts) — highest-value card with no play target after lay-down.`;
+    }
+
+    const unstagedHand = hand.filter(c => !isWild(c) && !stagedIds.has(c._id));
+    const notUseful    = unstagedHand.filter(c =>
+      !_cardHelpsStaging(c, playerIdx) && !_cardHelpsUnstagedHand(c, unstagedHand)
+    );
+
+    if (notUseful.includes(card) || notUseful.some(c => c._id === card._id)) {
+      return `discarding ${card.rank}${card.suit} (${pts}pts) — no contract fit and no group value in hand.`;
+    }
+
+    // It was the best available from the pool.
+    const sameRank = unstagedHand.filter(c => c.rank === card.rank && c._id !== card._id);
+    if (sameRank.length > 0) {
+      return `discarding ${card.rank}${card.suit} (${pts}pts) — keeping other ${card.rank}s for set; discarding duplicate.`;
+    }
+
+    return `discarding ${card.rank}${card.suit} (${pts}pts) — least useful card available given current staging.`;
   }
 
   // ─── Export ───────────────────────────────────────────────────────────────

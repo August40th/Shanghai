@@ -459,6 +459,9 @@
 
           if (allowWildSwap) {
             if (_tryWildSwap(data, subAreaCards, subAreaIdx, sub, myPlayer, owner)) {
+              window.gameLog?.logWildSwap(myPlayer, data.card,
+                subAreaCards.find(c => window.validator.isWild(c)),
+                owner, sub.dataset.label || `Area ${subAreaIdx}`);
               _reRender();
               window.validateLayDown(myTurnIdx);
               window.scoring.updatePlayerStats(getState().hands);
@@ -504,6 +507,9 @@
           newSubs[owner] = newFlat;
 
           setState({ hands: newHands, subcontractCards: newSubs });
+
+          // Log the play.
+          window.gameLog?.logPlay(myPlayer, data.card, owner, sub.dataset.label || `Area ${subAreaIdx}`);
 
           const remaining = getState().hands[myPlayer].length;
           if (myHandDiv) {
@@ -576,6 +582,9 @@
       // BUG FIX #4: Clear hardWindow if this HasLaidDown player still has
       // cards remaining — they did not go out the same turn they laid down.
       window.scoring.clearHardWindowIfNeeded(myTurnIdx);
+
+      // Log the discard.
+      window.gameLog?.logDiscard(myPlayer, card);
 
       // Push to discard pile.
       const newDiscard = [...state.discardPile, card];
@@ -671,6 +680,8 @@
 
     // BUG FIX #4: clear hardWindow if AI still has cards.
     window.scoring.clearHardWindowIfNeeded(playerIdx);
+
+    window.gameLog?.logDiscard(player, discarded);
 
     const newDiscard = [...state.discardPile, discarded];
     setState({ hands: newHands, discardPile: newDiscard });

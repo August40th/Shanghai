@@ -219,6 +219,7 @@
     window.dragDrop.setupDragDrop();
 
     // Show round 1 announcement, then start.
+    window.gameLog.logRound(1, window.gameState.ROUND_CONTRACT_LABELS[0]);
     await window.scoring.showRoundPopup(1);
 
     // Kick off AI turn if the starting player is an AI.
@@ -291,6 +292,7 @@
     _wireDrawPileClick();
     window.dragDrop.setupDragDrop();
 
+    window.gameLog.logRound(nextRound, window.gameState.ROUND_CONTRACT_LABELS[nextRound - 1]);
     await window.scoring.showRoundPopup(nextRound);
 
     // Kick off AI if starting player is AI.
@@ -391,6 +393,9 @@
     const newHands  = { ...state.hands };
     const player    = state.players[playerIdx];
     newHands[player] = [...(newHands[player] || []), card];
+
+    // Log the draw action.
+    window.gameLog?.logDraw(player, source, card);
 
     const patch = {
       hands:       newHands,
@@ -493,6 +498,13 @@
     btn.disabled = true;
     btn.style.backgroundColor = '';
     btn.textContent = 'Laid Down';
+
+    // Log the lay-down with each area's cards.
+    const logAreas = subAreas.map((sub, areaIdx) => ({
+      label: sub.dataset.label || `Area ${areaIdx}`,
+      cards: flatSubs.filter(c => c.subArea === areaIdx)
+    }));
+    window.gameLog?.logLayDown(player, logAreas);
 
     window.cardRenderer.renderAllSubcontractAreas();
     window.dragDrop.setupDragDrop();
@@ -669,6 +681,42 @@
       container.appendChild(btnWrapper);
       document.body.appendChild(container);
 
+      // ── AI auto-buy decisions ────────────────────────────────────────────
+      // Fire immediately after the popup renders. Each AI player evaluates
+      // whether to buy using aiEngine.shouldBuy, then simulates a button
+      // click on their own buy/decline button.
+      // We use a short delay so the popup is visible to the human player
+      // before AI decisions collapse the clock.
+      setTimeout(() => {
+        buyPlayers.forEach(({ playerIndex: i, isMyTurn }) => {
+          const aiData = window.aiData;
+          if (!aiData?.isAI?.[i]) return; // Skip human players.
+          if (isMyTurn) return;           // myTurn player veto handled separately.
+
+          const topDiscard = getState().discardPile[getState().discardPile.length - 1];
+          if (!topDiscard) return;
+
+          const wantsToBuy = window.aiEngine.shouldBuy(i, topDiscard);
+          // Find this player's button wrap and trigger the appropriate button.
+          const wraps = btnWrapper.querySelectorAll('.buy-clock-player-wrap');
+          wraps.forEach(wrap => {
+            const lbl = wrap.querySelector('.buy-clock-player-name');
+            if (lbl?.textContent !== getState().players[i]) return;
+            const btn = wrap.querySelector('.buy-clock-btn');
+            if (!btn || btn.disabled) return;
+            if (wantsToBuy) {
+              window.gameLog?.logBuy(getState().players[i], topDiscard, false);
+              btn.click();
+              if (fastBuy && !clickOrder.includes(i)) clickOrder.push(i);
+            } else {
+              window.gameLog?.logDecline(getState().players[i]);
+              const declBtn = wrap.querySelectorAll('.buy-clock-btn')[1];
+              if (declBtn && !declBtn.disabled) declBtn.click();
+            }
+          });
+        });
+      }, 300);
+
       const intervalId = setInterval(() => {
         buyTime--;
         if (buyTime >= 0) {
@@ -700,6 +748,8 @@
     // newTurnIdx "taking" the discard = their draw for this turn.
     // No buy decrement; no extra draw-pile card.
     if (myBuying) {
+      const topCard = state.discardPile[state.discardPile.length - 1];
+      window.gameLog?.logBuy(state.players[newTurnIdx], topCard, true);
       drawCardFrom('discard', newTurnIdx);
       return;
     }
@@ -717,6 +767,9 @@
       buyerIdx = shifted.find(i => otherBuyers.includes(i));
     }
     if (buyerIdx === undefined) return;
+
+    const boughtCard = state.discardPile[state.discardPile.length - 1];
+    window.gameLog?.logBuy(state.players[buyerIdx], boughtCard, false);
 
     // Buyer gets discard + draw-pile card and spends a buy.
     drawCardFrom('draw',    buyerIdx);
