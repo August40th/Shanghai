@@ -388,10 +388,23 @@
       if (!anchor) continue;
       // Set check.
       if (card.rank === anchor.rank && isValidSet([...areaCards, card])) return true;
-      // Run check.
+      // Run check — sort by rank before validating so positional check passes.
       const nonWilds = areaCards.filter(c => !isWild(c));
       if (nonWilds.length > 0 && (isWild(card) || card.suit === nonWilds[0].suit)) {
-        if (isValidRun([...areaCards, card])) return true;
+        const withCard = [...areaCards, card];
+        const wilds    = withCard.filter(isWild);
+        const sorted   = withCard
+          .filter(c => !isWild(c))
+          .sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
+        // Reinsert wilds into gaps.
+        const reordered = _buildRunWithWilds(sorted, wilds);
+        if (reordered && isValidRun(reordered)) return true;
+        // Also check if the card simply extends either end.
+        const lowVal  = Math.min(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
+        const highVal = Math.max(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
+        const cardVal = RANK_VAL[card.rank] || 0;
+        const cardHigh = card.rank === 'A' ? 14 : cardVal;
+        if (cardVal === lowVal - 1 || cardHigh === highVal + 1) return true;
       }
     }
     return false;
@@ -698,6 +711,21 @@
           bestRun.cards.forEach(c => usedIds.add(c._id));
           const complete = isValidRun(bestRun.cards);
           score += complete ? 1000 : bestRun.cards.length * 5;
+        } else {
+          // No complete or wild-fillable run found — stage the best partial
+          // (largest group of same-suit cards) as a work-in-progress.
+          const partial = _findBestPartialRun(available);
+          if (partial.length >= 2) {
+            staging[areaIdx] = partial;
+            partial.forEach(c => usedIds.add(c._id));
+            score += partial.length * 2;
+          } else if (partial.length === 1) {
+            // Even a single card is worth staging to show intent and protect
+            // it from being discarded.
+            staging[areaIdx] = partial;
+            partial.forEach(c => usedIds.add(c._id));
+            score += 1;
+          }
         }
       });
 
@@ -841,6 +869,41 @@
     });
 
     return bestRun;
+  }
+
+  // Finds the best partial run seed from available cards — the largest group
+  // of same-suit cards sorted by rank, used when no complete run is achievable.
+  // Returns cards sorted in ascending rank order ready for staging.
+  function _findBestPartialRun(availableCards) {
+    const bySuit = {};
+    availableCards.forEach(c => {
+      if (!bySuit[c.suit]) bySuit[c.suit] = [];
+      bySuit[c.suit].push(c);
+    });
+
+    let best = [];
+    Object.values(bySuit).forEach(cards => {
+      if (cards.length <= best.length) return;
+      // Sort by rank value ascending.
+      const sorted = [...cards].sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
+      // Find the longest consecutive-ish run seed (cards within 3 ranks of each other).
+      // This picks the most connected group, not just all same-suit cards.
+      let bestChain = [sorted[0]];
+      let currentChain = [sorted[0]];
+      for (let i = 1; i < sorted.length; i++) {
+        const gap = (RANK_VAL[sorted[i].rank] || 0) - (RANK_VAL[sorted[i - 1].rank] || 0);
+        if (gap <= 3) {
+          currentChain.push(sorted[i]);
+        } else {
+          if (currentChain.length > bestChain.length) bestChain = currentChain;
+          currentChain = [sorted[i]];
+        }
+      }
+      if (currentChain.length > bestChain.length) bestChain = currentChain;
+      if (bestChain.length > best.length) best = bestChain;
+    });
+
+    return best;
   }
 
   // Returns one or two sorted versions of a suit's cards — always low-ace

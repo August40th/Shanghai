@@ -48,6 +48,11 @@
   const _wildSwaps = new Map(); // playerName → [{subArea, globalWildIdx, wildCard, swapCard}]
 
   function _getWildSwapSetting() {
+    // window.gameRules is set by roundManager.initTable and is always available
+    // on the table page. Fall back to cookie parse only as a safety net.
+    if (window.gameRules?.wildSwap !== undefined) {
+      return String(window.gameRules.wildSwap).toLowerCase();
+    }
     try {
       const row = document.cookie.split('; ').find(r => r.startsWith('customRules='));
       if (!row) return 'off';
@@ -60,24 +65,55 @@
   // areaOwner = player who owns the subcontract area (may differ on cross-player plays)
   function _tryWildSwap(data, subAreaCards, subAreaIdx, sub, myPlayer, areaOwner) {
     const { isWild } = window.validator;
+
+    // The dropped card must not itself be a wild.
+    if (isWild(data.card)) return false;
+
     const wildIndices = subAreaCards
       .map((c, i) => (isWild(c) ? i : -1))
       .filter(i => i !== -1);
     if (!wildIndices.length) return false;
 
-    const label    = (sub.dataset.label || '').toLowerCase();
-    const state    = getState();
+    const label = (sub.dataset.label || '').toLowerCase();
+    const state = getState();
     const flatSubs = [...(state.subcontractCards[areaOwner] || [])];
 
+    // Try substituting the dropped card for each wild in the area.
+    // Rather than substituting by position index (which fails when the real
+    // card belongs at a different position than the wild), we:
+    //   1. Remove one wild from the area
+    //   2. Insert the real card at the correct sorted position
+    //   3. Validate the result
     for (const wildIdx of wildIndices) {
-      const candidate = subAreaCards.slice();
-      candidate[wildIdx] = data.card;
+      // Build candidate: area without this wild, plus the real card.
+      const withoutWild = subAreaCards.filter((_, i) => i !== wildIdx);
+      const RVAL = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
+                     '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
+
+      let candidate;
+      if (label.includes('set')) {
+        // Sets are order-independent — just append.
+        candidate = [...withoutWild, data.card];
+      } else {
+        // For runs, insert the real card at the correct rank position.
+        const cardVal = RVAL[data.card.rank] || 0;
+        const insertAt = withoutWild.findIndex(c => {
+          if (isWild(c)) return false;
+          return (RVAL[c.rank] || 0) > cardVal;
+        });
+        if (insertAt === -1) {
+          candidate = [...withoutWild, data.card];
+        } else {
+          candidate = [...withoutWild.slice(0, insertAt), data.card, ...withoutWild.slice(insertAt)];
+        }
+      }
+
       const valid =
         (label.includes('set') && window.validator.isValidSet(candidate)) ||
         (label.includes('run') && window.validator.isValidRun(candidate));
       if (!valid) continue;
 
-      // Find the global index of this wild card in flatSubs.
+      // Find the global index of this wild in flatSubs.
       let countInArea = -1, globalWildIdx = -1;
       for (let i = 0; i < flatSubs.length; i++) {
         if (flatSubs[i].subArea === subAreaIdx) countInArea++;
@@ -87,24 +123,44 @@
 
       const wildCard = flatSubs[globalWildIdx];
 
-      // Mutate copies — never mutate arrays in place.
-      const newSubs  = { ...state.subcontractCards };
-      const newFlat  = [...flatSubs];
-      newFlat.splice(globalWildIdx, 1, { ...data.card, subArea: subAreaIdx });
+      // Build new flat area: remove the wild, insert real card at correct position.
+      const newSubs = { ...state.subcontractCards };
+      const newFlat = [...flatSubs];
+      // Remove the wild.
+      newFlat.splice(globalWildIdx, 1);
+
+      // Find correct global insertion point for the real card by rank value.
+      const RVAL2 = RVAL;
+      const cardVal = RVAL2[data.card.rank] || 0;
+      let insertGlobal = newFlat.findLastIndex(c => c.subArea === subAreaIdx &&
+        !isWild(c) && (RVAL2[c.rank] || 0) <= cardVal);
+      if (insertGlobal === -1) {
+        // Insert before all current area cards.
+        const firstInArea = newFlat.findIndex(c => c.subArea === subAreaIdx);
+        insertGlobal = firstInArea === -1 ? newFlat.length : firstInArea;
+      } else {
+        insertGlobal += 1; // Insert after the found card.
+      }
+      newFlat.splice(insertGlobal, 0, { ...data.card, subArea: subAreaIdx });
       newSubs[areaOwner] = newFlat;
 
+      // Update active player's hand: remove the played card, add the wild.
       const newHands = { ...state.hands };
       const newHand  = [...(state.hands[myPlayer] || [])];
-      // Remove the played card by _id.
       const playedIdx = newHand.findIndex(c => c._id === data.card._id);
       if (playedIdx !== -1) newHand.splice(playedIdx, 1);
+
+      // Also remove from subcontract if it came from there (pre-laydown).
+      const mySubs = [...(newSubs[myPlayer] || [])];
+      const subIdx = mySubs.findIndex(c => c._id === data.card._id);
+      if (subIdx !== -1) mySubs.splice(subIdx, 1);
+      newSubs[myPlayer] = mySubs;
+
       newHand.push(wildCard);
       newHands[myPlayer] = newHand;
 
       setState({ hands: newHands, subcontractCards: newSubs });
 
-      // Track swap for potential cancellation. Store areaOwner so we can
-      // restore the correct player's subcontract on cancel.
       const swaps = _wildSwaps.get(myPlayer) || [];
       swaps.push({ subArea: subAreaIdx, globalWildIdx, wildCard, swapCard: data.card, areaOwner });
       _wildSwaps.set(myPlayer, swaps);
@@ -343,13 +399,17 @@
   // ─── Laid-down contract drop targets (post-laydown plays) ─────────────────
   // Any player's laid-down area accepts cards from the active player's hand,
   // provided the play is valid (extends the set/run or wild-swaps).
-  // The active player must have laid down themselves first.
+  // Wild swap 'pre': player may swap even before laying down themselves.
+  // Wild swap 'post': player must have laid down first.
+  // Normal play: player must have laid down first.
 
   function _wireLaidDownContractDrops(myTurnIdx) {
-    const state    = getState();
-    const myPlayer = state.players[myTurnIdx];
-    const myHandDiv = document.getElementById(`hand-${myTurnIdx}`);
+    const state          = getState();
+    const myPlayer       = state.players[myTurnIdx];
+    const myHandDiv      = document.getElementById(`hand-${myTurnIdx}`);
     const wildSwapSetting = _getWildSwapSetting();
+    const preSwap        = wildSwapSetting === 'pre';
+    const postSwap       = wildSwapSetting === 'post';
 
     state.players.forEach((owner, playerIdx) => {
       if (!state.laidDownPlayers.has(playerIdx)) return;
@@ -357,8 +417,11 @@
       const subAreas = window.getSubcontractSubAreas(playerIdx);
       subAreas.forEach((sub, subAreaIdx) => {
         sub.ondragover = e => {
-          // Active player must have laid down to play on any contract.
-          if (!getState().laidDownPlayers.has(myTurnIdx)) return;
+          const st      = getState();
+          const hasLaid = st.laidDownPlayers.has(myTurnIdx);
+          // Allow dragover if: player has laid down (normal play + post-swap),
+          // OR wild swap is 'pre' and player hasn't laid down yet.
+          if (!hasLaid && !preSwap) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = 'move';
           sub.classList.add('drop-target');
@@ -369,25 +432,32 @@
           sub.classList.remove('drop-target');
 
           // ── Live state reads ─────────────────────────────────────────
-          const st        = getState();
-          const hasLaid   = st.laidDownPlayers.has(myTurnIdx);
-          if (!hasLaid) return;
+          const st      = getState();
+          const hasLaid = st.laidDownPlayers.has(myTurnIdx);
+
+          // Must have drawn before playing or swapping.
+          if (!st.hasDrawn) return;
 
           const raw = e.dataTransfer.getData('text/plain');
           if (!raw) return;
           const data = JSON.parse(raw);
-          if (!data.card || data.from !== 'hand' || data.playerIndex !== myTurnIdx) return;
+          // For pre-laydown wild swap, the card may come from hand OR subcontract.
+          // For normal post-laydown play, must come from hand only.
+          const fromHand       = data.from === 'hand';
+          const fromSubcontract = data.from === 'subcontract';
+          if (!data.card || data.playerIndex !== myTurnIdx) return;
+          if (!fromHand && !(fromSubcontract && preSwap && !hasLaid)) return;
 
-          const flatOwner  = [...(st.subcontractCards[owner] || [])];
+          const flatOwner    = [...(st.subcontractCards[owner] || [])];
           const subAreaCards = flatOwner.filter(c => c.subArea === subAreaIdx);
           const label        = (sub.dataset.label || '').toLowerCase();
 
-          // ── Wild swap attempt ────────────────────────────────────────
-          const allowWildSwap =
-            wildSwapSetting === 'post' ||
-            (wildSwapSetting === 'pre' && !st.laidDownPlayers.has(myTurnIdx));
+          // ── Wild swap ────────────────────────────────────────────────
+          // 'pre': allowed before lay-down (swap only, no normal play).
+          // 'post': allowed after lay-down (swap + normal play).
+          const allowWildSwap = postSwap || (preSwap && !hasLaid);
 
-          if (allowWildSwap && window.validator.isWild) {
+          if (allowWildSwap) {
             if (_tryWildSwap(data, subAreaCards, subAreaIdx, sub, myPlayer, owner)) {
               _reRender();
               window.validateLayDown(myTurnIdx);
@@ -396,10 +466,13 @@
             }
           }
 
-          // ── Normal play ──────────────────────────────────────────────
-          // Cannot play on own un-laid-down contract from another player's
-          // area if the active player has not laid down.
-          // (Already guarded above — hasLaid must be true to reach here.)
+          // ── Normal play (requires lay-down first) ────────────────────
+          if (!hasLaid) {
+            // Pre-swap attempt failed — nothing else allowed pre-laydown.
+            sub.style.outline = '2px solid red';
+            setTimeout(() => { sub.style.outline = ''; }, 800);
+            return;
+          }
 
           const container    = sub.lastChild;
           const insertInArea = container ? _getInsertIndex(container, e.clientX) : subAreaCards.length;
@@ -432,7 +505,6 @@
 
           setState({ hands: newHands, subcontractCards: newSubs });
 
-          // Check if this was the final card (player goes out by playing, not discarding).
           const remaining = getState().hands[myPlayer].length;
           if (myHandDiv) {
             window.cardRenderer.renderCardArray(
