@@ -134,6 +134,13 @@
       <label>Player Name:
         <input type="text" id="humanNameInput" value="Player1" style="width:60%;padding:6px;border-radius:6px;border:0;background:rgba(0,0,0,0.12);color:#fff">
       </label>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+        <label class="compact-switch" title="Debug mode: human player is replaced by an AI so all players are AI — use the Game Log to observe">
+          <input type="checkbox" id="debugAiChk">
+          <span class="compact-slider"></span>
+        </label>
+        <span style="font-weight:600;color:#f9c74f;font-size:0.9rem;" data-tooltip="Replaces the human player with an AI for observation/debugging — watch AI vs AI via the Game Log">🤖 Debug: AI vs AI</span>
+      </div>
       <div style="font-weight:700">Computers</div>
       <div class="player-controls">
         <button id="decComp" class="btn" style="background: var(--on-red);color:white">-</button>
