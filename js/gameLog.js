@@ -120,6 +120,40 @@
     `;
     clearBtn.onclick = () => clear();
 
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = 'Copy';
+    copyBtn.title = 'Copy log to clipboard';
+    copyBtn.style.cssText = `
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #ccc;
+      border-radius: 4px;
+      padding: 2px 7px;
+      cursor: pointer;
+      font-size: 11px;
+    `;
+    copyBtn.onclick = () => {
+      const text = entries.map(e => {
+        const plain = e.html.replace(/<[^>]+>/g, '');
+        return `[${e.time}] [${e.cat.label}] ${plain}`;
+      }).join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = '✓ Copied';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+      }).catch(() => {
+        // Fallback for non-https.
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        copyBtn.textContent = '✓ Copied';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+      });
+    };
+
     const hideBtn = document.createElement('button');
     hideBtn.textContent = '−';
     hideBtn.title = 'Minimise';
@@ -137,6 +171,7 @@
     hideBtn.onclick = () => _toggleMinimise();
 
     btns.appendChild(clearBtn);
+    btns.appendChild(copyBtn);
     btns.appendChild(hideBtn);
     header.appendChild(title);
     header.appendChild(btns);
@@ -262,7 +297,7 @@
     // Message.
     const msg = document.createElement('span');
     msg.innerHTML = entry.html;
-    msg.style.cssText = 'flex:1;word-break:break-word;';
+    msg.style.cssText = 'flex:1;word-break:break-word;user-select:text;cursor:text;';
 
     row.appendChild(ts);
     row.appendChild(badge);

@@ -601,20 +601,21 @@
       window.cardRenderer.renderAllSubcontractAreas();
       window.cardRenderer.renderDiscardPile();
 
-      // Count total cards the same way updatePlayerStats does:
-      // hand + subcontract for non-laid-down players; hand only after lay-down.
+      // Run scoring/round-end check FIRST — must happen before any early return.
       const freshState  = getState();
-      const hasLaidDown = freshState.laidDownPlayers.has(myTurnIdx);
-      const totalCards  = hasLaidDown
-        ? (freshState.hands[myPlayer] || []).length
-        : (freshState.hands[myPlayer] || []).length +
-          (freshState.subcontractCards[myPlayer] || []).length;
+      const hasLaidNow  = freshState.laidDownPlayers.has(myTurnIdx);
+      const handCount   = (freshState.hands[myPlayer] || []).length;
+      const subCount    = (freshState.subcontractCards[myPlayer] || []).length;
+      const totalCards  = hasLaidNow ? handCount : handCount + subCount;
 
-      const roundEnded = window.scoring.updatePlayerStats(freshState.hands);
+      const roundEnded  = window.scoring.updatePlayerStats(freshState.hands);
 
-      // Only advance turn if the player still has cards — otherwise endRound
-      // was already triggered inside updatePlayerStats.
-      if (totalCards === 0 || roundEnded || getState().roundFinished) return;
+      if (roundEnded || getState().roundFinished) return;
+
+      // If player truly has zero cards (hand + subcontract both empty and not
+      // laid down) endRound should have fired inside updatePlayerStats above.
+      // If it somehow didn't (edge case), don't advance — game is over.
+      if (totalCards === 0) return;
 
       // Advance turn.
       const nextIdx = (myTurnIdx + 1) % freshState.players.length;

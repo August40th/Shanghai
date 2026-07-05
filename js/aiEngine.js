@@ -76,25 +76,25 @@
   async function _aiDraw(playerIdx) {
     return new Promise(resolve => {
       setTimeout(() => {
-        const { players, hands, subcontractCards, discardPile, laidDownPlayers } = getState();
-        const player   = players[playerIdx];
-        const hand     = hands[player] || [];
-        const hasLaid  = laidDownPlayers.has(playerIdx);
-        const topDiscard = discardPile[discardPile.length - 1];
+        try {
+          const { players, hands, subcontractCards, discardPile, laidDownPlayers } = getState();
+          const player   = players[playerIdx];
+          const hand     = hands[player] || [];
+          const hasLaid  = laidDownPlayers.has(playerIdx);
+          const topDiscard = discardPile[discardPile.length - 1];
 
-        let drawSource = 'draw';
-        let drawReason = 'drew blind from the deck.';
-        if (topDiscard && _discardHelpsAI(topDiscard, hand, playerIdx, hasLaid)) {
-          drawSource = 'discard';
-          drawReason = _explainDiscardDraw(topDiscard, hand, playerIdx, hasLaid);
-          console.log(`AI ${playerIdx}: taking discard ${topDiscard.rank}${topDiscard.suit}`);
-        }
+          let drawSource = 'draw';
+          let drawReason = 'drew blind from the deck.';
+          if (topDiscard && _discardHelpsAI(topDiscard, hand, playerIdx, hasLaid)) {
+            drawSource = 'discard';
+            drawReason = _explainDiscardDraw(topDiscard, hand, playerIdx, hasLaid);
+          }
 
-        window.drawCardFrom(drawSource, playerIdx);
-        if (drawSource === 'draw') {
-          window.gameLog?.logReason(players[playerIdx], 'No useful discard — drew blind from the deck.');
-        } else {
-          window.gameLog?.logReason(players[playerIdx], drawReason);
+          window.drawCardFrom(drawSource, playerIdx);
+          window.gameLog?.logReason(players[playerIdx],
+            drawSource === 'draw' ? 'No useful discard — drew blind from the deck.' : drawReason);
+        } catch (err) {
+          console.error(`AI ${playerIdx} draw error:`, err);
         }
         resolve();
       }, 800);
@@ -112,44 +112,41 @@
   async function _aiStage(playerIdx) {
     return new Promise(resolve => {
       setTimeout(() => {
-        const { players, hands, subcontractCards, roundIndex, laidDownPlayers } = getState();
+        try {
+          const { players, hands, subcontractCards, roundIndex, laidDownPlayers } = getState();
+          if (laidDownPlayers.has(playerIdx)) { resolve(); return; }
 
-        // Never re-stage after lay-down — the contract is on the table and
-        // must not be rearranged. Only stage during the pre-laydown phase.
-        if (laidDownPlayers.has(playerIdx)) { resolve(); return; }
+          const player        = players[playerIdx];
+          const hand          = hands[player] || [];
+          const currentStaged = subcontractCards[player] || [];
+          const allCards      = [...hand, ...currentStaged];
+          const subAreas      = window.getSubcontractSubAreas(playerIdx);
+          if (!subAreas.length) {
+            console.warn(`AI ${playerIdx}: no subcontract areas found, skipping stage`);
+            resolve(); return;
+          }
 
-        const player        = players[playerIdx];
-        const hand          = hands[player] || [];
-        const currentStaged = subcontractCards[player] || [];
-        const allCards      = [...hand, ...currentStaged];
-        const subAreas = window.getSubcontractSubAreas(playerIdx);
-        if (!subAreas.length) {
-          console.warn(`AI ${playerIdx}: no subcontract areas found, skipping stage`);
-          resolve();
-          return;
+          const optimalStaging = _findOptimalStaging(allCards, roundIndex, subAreas);
+          _applyStaging(playerIdx, optimalStaging);
+
+          const subAreaLabels = subAreas.map(s => s.dataset.label || '?');
+          const stagedByArea  = optimalStaging.map((cards, i) => ({
+            label: subAreaLabels[i] || `Area ${i}`,
+            cards
+          }));
+          window.gameLog?.logStage(players[playerIdx], stagedByArea);
+
+          const handDiv = document.getElementById(`hand-${playerIdx}`);
+          if (handDiv) {
+            window.cardRenderer.renderCardArray(
+              getState().hands[player], handDiv, false, playerIdx, 'hand'
+            );
+          }
+          window.cardRenderer.renderAllSubcontractAreas();
+          window.refreshLayButtons?.();
+        } catch (err) {
+          console.error(`AI ${playerIdx} stage error:`, err);
         }
-
-        const optimalStaging = _findOptimalStaging(allCards, roundIndex, subAreas);
-        _applyStaging(playerIdx, optimalStaging);
-
-        // Log staging decisions.
-        const subAreaLabels = subAreas.map(s => s.dataset.label || '?');
-        const stagedByArea  = optimalStaging.map((cards, i) => ({
-          label: subAreaLabels[i] || `Area ${i}`,
-          cards
-        }));
-        window.gameLog?.logStage(players[playerIdx], stagedByArea);
-
-        // Re-render this player's hand (non-draggable — AI cards)
-        const handDiv = document.getElementById(`hand-${playerIdx}`);
-        if (handDiv) {
-          window.cardRenderer.renderCardArray(
-            getState().hands[player], handDiv, false, playerIdx, 'hand'
-          );
-        }
-        window.cardRenderer.renderAllSubcontractAreas();
-        window.refreshLayButtons?.();
-
         resolve();
       }, 500);
     });
@@ -163,50 +160,54 @@
   async function _aiLayDown(playerIdx) {
     return new Promise(resolve => {
       setTimeout(() => {
-        const { laidDownPlayers } = getState();
-        // Don't lay down twice.
-        if (laidDownPlayers.has(playerIdx)) { resolve(false); return; }
+        try {
+          const state = getState();
+          const { laidDownPlayers, players, subcontractCards } = state;
 
-        const isComplete = window.validator.hasCompleteStagedContracts(playerIdx);
-        if (!isComplete) { resolve(false); return; }
+          if (laidDownPlayers.has(playerIdx)) { resolve(false); return; }
 
-        console.log(`AI ${playerIdx}: laying down`);
+          const isComplete = window.validator.hasCompleteStagedContracts(playerIdx);
+          if (!isComplete) { resolve(false); return; }
 
-        // Log the lay-down.
-        const subAreas   = window.getSubcontractSubAreas(playerIdx);
-        const flatSubs   = getState().subcontractCards[players[playerIdx]] || [];
-        const logAreas   = subAreas.map((sub, areaIdx) => ({
-          label: sub.dataset.label || `Area ${areaIdx}`,
-          cards: flatSubs.filter(c => c.subArea === areaIdx)
-        }));
-        window.gameLog?.logLayDown(players[playerIdx], logAreas);
-        window.gameLog?.logReason(players[playerIdx], 'Contract complete — laying down.');
+          console.log(`AI ${playerIdx}: laying down`);
 
-        // Mark laid down in gameState.
-        const newSet = new Set(getState().laidDownPlayers);
-        newSet.add(playerIdx);
+          // Log the lay-down.
+          const subAreas = window.getSubcontractSubAreas(playerIdx);
+          const flatSubs = subcontractCards[players[playerIdx]] || [];
+          const logAreas = subAreas.map((sub, areaIdx) => ({
+            label: sub.dataset.label || `Area ${areaIdx}`,
+            cards: flatSubs.filter(c => c.subArea === areaIdx)
+          }));
+          window.gameLog?.logLayDown(players[playerIdx], logAreas);
+          window.gameLog?.logReason(players[playerIdx], 'Contract complete — laying down.');
 
-        // Activate Shanghai windows if this is the first lay-down this round.
-        const alreadyLaidCount = getState().laidDownPlayers.size;
-        if (alreadyLaidCount === 0) {
-          window.scoring.activateShanghaiWindows();
-        } else if (alreadyLaidCount === 1) {
-          // Second layer closes the softWindow.
-          setState({ softWindow: false });
+          // Activate Shanghai windows.
+          const alreadyLaidCount = laidDownPlayers.size;
+          if (alreadyLaidCount === 0) {
+            window.scoring.activateShanghaiWindows();
+          } else if (alreadyLaidCount === 1) {
+            setState({ softWindow: false });
+          }
+
+          // Mark laid down in gameState.
+          const newSet = new Set(laidDownPlayers);
+          newSet.add(playerIdx);
+          setState({ laidDownPlayers: newSet });
+
+          // Update DOM.
+          const playerDiv = document.getElementById(`player-${playerIdx}`);
+          if (playerDiv) playerDiv.classList.add('HasLaidDown');
+          const btn = playerDiv?.querySelector('.lay-down-btn');
+          if (btn) { btn.disabled = true; btn.textContent = 'Laid Down'; }
+
+          window.cardRenderer.renderAllSubcontractAreas();
+          window.dragDrop.setupDragDrop();
+
+          resolve(true);
+        } catch (err) {
+          console.error(`AI ${playerIdx} lay-down error:`, err);
+          resolve(false);
         }
-
-        setState({ laidDownPlayers: newSet });
-
-        // Update DOM to reflect lay-down.
-        const playerDiv = document.getElementById(`player-${playerIdx}`);
-        if (playerDiv) playerDiv.classList.add('HasLaidDown');
-        const btn = playerDiv?.querySelector('.lay-down-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Laid Down'; }
-
-        window.cardRenderer.renderAllSubcontractAreas();
-        window.dragDrop.setupDragDrop();
-
-        resolve(true);
       }, 400);
     });
   }
@@ -219,69 +220,62 @@
   async function _aiPlayOnContracts(playerIdx) {
     return new Promise(resolve => {
       setTimeout(() => {
-        const { players, laidDownPlayers } = getState();
-        if (!laidDownPlayers.has(playerIdx)) { resolve(); return; }
+        try {
+          const { players, laidDownPlayers } = getState();
+          if (!laidDownPlayers.has(playerIdx)) { resolve(); return; }
 
-        let played = true;
-        while (played) {
-          played = false;
-          const { hands } = getState();
-          const player = players[playerIdx];
-          const hand   = [...(hands[player] || [])];
+          let played = true;
+          while (played) {
+            played = false;
+            const { hands } = getState();
+            const player = players[playerIdx];
+            const hand   = [...(hands[player] || [])];
 
-          for (let ci = 0; ci < hand.length; ci++) {
-            const card = hand[ci];
-            const target = window.validator.canPlayOnExistingContracts(card, playerIdx);
-            if (!target) continue;
+            for (let ci = 0; ci < hand.length; ci++) {
+              const card = hand[ci];
+              const target = window.validator.canPlayOnExistingContracts(card, playerIdx);
+              if (!target) continue;
 
-            // Remove card from hand.
-            const newHands = { ...getState().hands };
-            newHands[player] = newHands[player].filter(c => c._id !== card._id);
+              const newHands = { ...getState().hands };
+              newHands[player] = newHands[player].filter(c => c._id !== card._id);
 
-            // Insert card at the correct position in the target sub-area.
-            // For sets: order doesn't matter, append.
-            // For runs: insertEnd 'low' means prepend, 'high' means append.
-            const newSub   = { ...getState().subcontractCards };
-            const owner    = players[target.playerIdx];
-            const flatOwner = [...(newSub[owner] || [])];
+              const newSub    = { ...getState().subcontractCards };
+              const owner     = players[target.playerIdx];
+              const flatOwner = [...(newSub[owner] || [])];
 
-            if (target.type === 'run' && target.insertEnd === 'low') {
-              // Find the first card in this area and insert before it.
-              const firstInArea = flatOwner.findIndex(c => c.subArea === target.areaIdx);
-              if (firstInArea === -1) {
-                flatOwner.push({ ...card, subArea: target.areaIdx });
+              if (target.type === 'run' && target.insertEnd === 'low') {
+                const firstInArea = flatOwner.findIndex(c => c.subArea === target.areaIdx);
+                if (firstInArea === -1) flatOwner.push({ ...card, subArea: target.areaIdx });
+                else flatOwner.splice(firstInArea, 0, { ...card, subArea: target.areaIdx });
               } else {
-                flatOwner.splice(firstInArea, 0, { ...card, subArea: target.areaIdx });
+                const lastInArea = flatOwner.reduce((last, c, i) =>
+                  c.subArea === target.areaIdx ? i : last, -1);
+                flatOwner.splice(lastInArea + 1, 0, { ...card, subArea: target.areaIdx });
               }
-            } else {
-              // Append after the last card in this area.
-              const lastInArea = flatOwner.reduce((last, c, i) =>
-                c.subArea === target.areaIdx ? i : last, -1);
-              flatOwner.splice(lastInArea + 1, 0, { ...card, subArea: target.areaIdx });
+
+              newSub[owner] = flatOwner;
+              setState({ hands: newHands, subcontractCards: newSub });
+
+              const sub = window.getSubcontractSubAreas(target.playerIdx)[target.areaIdx];
+              const areaLabel = sub?.dataset.label || `Area ${target.areaIdx}`;
+              window.gameLog?.logPlay(player, card, players[target.playerIdx], areaLabel);
+              console.log(`AI ${playerIdx}: played ${card.rank}${card.suit} onto player ${target.playerIdx} area ${target.areaIdx}`);
+              played = true;
+              break;
             }
-
-            newSub[owner] = flatOwner;
-            setState({ hands: newHands, subcontractCards: newSub });
-            // Log the play.
-            const sub = window.getSubcontractSubAreas(target.playerIdx)[target.areaIdx];
-            const areaLabel = sub?.dataset.label || `Area ${target.areaIdx}`;
-            window.gameLog?.logPlay(player, card, players[target.playerIdx], areaLabel);
-            console.log(`AI ${playerIdx}: played ${card.rank}${card.suit} onto player ${target.playerIdx} area ${target.areaIdx}`);
-            played = true;
-            break; // Restart loop with fresh hand after each play.
           }
-        }
 
-        // Re-render after all plays.
-        const handDiv = document.getElementById(`hand-${playerIdx}`);
-        if (handDiv) {
-          window.cardRenderer.renderCardArray(
-            getState().hands[players[playerIdx]], handDiv, false, playerIdx, 'hand'
-          );
+          const handDiv = document.getElementById(`hand-${playerIdx}`);
+          if (handDiv) {
+            window.cardRenderer.renderCardArray(
+              getState().hands[players[playerIdx]], handDiv, false, playerIdx, 'hand'
+            );
+          }
+          window.cardRenderer.renderAllSubcontractAreas();
+          window.scoring.updatePlayerStats(getState().hands);
+        } catch (err) {
+          console.error(`AI ${playerIdx} play-on-contracts error:`, err);
         }
-        window.cardRenderer.renderAllSubcontractAreas();
-        window.scoring.updatePlayerStats(getState().hands);
-
         resolve();
       }, 400);
     });
@@ -296,24 +290,25 @@
   async function _aiDiscard(playerIdx) {
     return new Promise(resolve => {
       setTimeout(() => {
-        const { players, hands, roundFinished } = getState();
-        if (roundFinished) { resolve(); return; }
+        try {
+          const { players, hands, roundFinished } = getState();
+          if (roundFinished) { resolve(); return; }
 
-        const player = players[playerIdx];
-        const hand   = [...(hands[player] || [])];
-        if (hand.length === 0) { resolve(); return; }
+          const player = players[playerIdx];
+          const hand   = [...(hands[player] || [])];
+          if (hand.length === 0) { resolve(); return; }
 
-        const cardToDiscard = _chooseDiscard(hand, playerIdx);
-        if (!cardToDiscard) { resolve(); return; }
+          const cardToDiscard = _chooseDiscard(hand, playerIdx);
+          if (!cardToDiscard) { resolve(); return; }
 
-        const discardReason = _explainDiscard(cardToDiscard, hand, playerIdx);
-        window.gameLog?.logReason(players[playerIdx], discardReason);
-        console.log(`AI ${playerIdx}: discarding ${cardToDiscard.rank}${cardToDiscard.suit}`);
+          const discardReason = _explainDiscard(cardToDiscard, hand, playerIdx);
+          window.gameLog?.logReason(players[playerIdx], discardReason);
+          console.log(`AI ${playerIdx}: discarding ${cardToDiscard.rank}${cardToDiscard.suit}`);
 
-        // Use the shared discard path so resetTurnState, buy clock,
-        // and round-end detection all fire correctly.
-        window.aiDiscard(cardToDiscard, playerIdx);
-
+          window.aiDiscard(cardToDiscard, playerIdx);
+        } catch (err) {
+          console.error(`AI ${playerIdx} discard error:`, err);
+        }
         resolve();
       }, 600);
     });
@@ -774,7 +769,9 @@
       Object.entries(rankGroups).forEach(([rank, cards]) => {
         const base = RANK_VAL[rank] || 5;
         if (cards.length >= 3) {
-          setCandidates.push({ rank, cards: cards.slice(0, 3), complete: true,  score: base * 10 + 100, wildsNeeded: 0 });
+          // Stage ALL cards of this rank (not just 3) — no reason to leave
+          // a 4th card of the same rank unstaged when it's safe in the set area.
+          setCandidates.push({ rank, cards: [...cards], complete: true, score: base * 10 + 100, wildsNeeded: 0 });
         } else if (cards.length === 2 && remainingSetWilds.length >= 1) {
           setCandidates.push({ rank, cards: [...cards, remainingSetWilds[0]], complete: true,  score: base * 10 + 90, wildsNeeded: 1 });
         } else if (cards.length === 2) {

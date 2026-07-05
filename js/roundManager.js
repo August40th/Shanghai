@@ -709,19 +709,29 @@
         buyPlayers.forEach(({ playerIndex: i, isMyTurn }) => {
           const aiData = window.aiData;
           if (!aiData?.isAI?.[i]) return; // Skip human players.
-          if (isMyTurn) return;           // myTurn player veto handled separately.
 
           const topDiscard = getState().discardPile[getState().discardPile.length - 1];
           if (!topDiscard) return;
 
-          const wantsToBuy = window.aiEngine.shouldBuy(i, topDiscard);
-          // Find this player's button wrap and trigger the appropriate button.
           const wraps = btnWrapper.querySelectorAll('.buy-clock-player-wrap');
           wraps.forEach(wrap => {
             const lbl = wrap.querySelector('.buy-clock-player-name');
             if (lbl?.textContent !== getState().players[i]) return;
+
+            if (isMyTurn) {
+              // The newTurnIdx player is also AI — they never veto their own
+              // draw; auto-decline so allActed() can fire and collapse the clock.
+              const declBtn = wrap.querySelectorAll('.buy-clock-btn')[1];
+              if (declBtn && !declBtn.disabled) {
+                window.gameLog?.logDecline(getState().players[i]);
+                declBtn.click();
+              }
+              return;
+            }
+
             const btn = wrap.querySelector('.buy-clock-btn');
             if (!btn || btn.disabled) return;
+            const wantsToBuy = window.aiEngine.shouldBuy(i, topDiscard);
             if (wantsToBuy) {
               window.gameLog?.logBuy(getState().players[i], topDiscard, false);
               btn.click();
