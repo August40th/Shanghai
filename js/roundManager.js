@@ -207,6 +207,15 @@
     window.cardRenderer.renderAllSubcontractAreas();
     window.scoring.updatePlayerStats(getState().hands);
 
+    // Log every player's starting hand.
+    const dealtState = getState();
+    dealtState.players.forEach(p => {
+      window.gameLog?.log({
+        cat: { label: 'Dealt', color: '#f39c12' },
+        html: `<strong>${p}</strong>: ${window.gameLog.fmtCards(dealtState.hands[p])}`
+      });
+    });
+
     // Mark starting player's turn.
     const startDiv = document.getElementById(`player-${startIdx}`);
     if (startDiv) startDiv.classList.add('MyTurn');
@@ -280,6 +289,15 @@
     window.cardRenderer.renderDiscardPile();
     window.cardRenderer.renderAllSubcontractAreas();
     window.scoring.updatePlayerStats(getState().hands);
+
+    // Log every player's starting hand for the new round.
+    const { hands: dealtHands, players: pnames } = getState();
+    pnames.forEach(p => {
+      window.gameLog?.log({
+        cat: { label: 'Dealt', color: '#f39c12' },
+        html: `<strong>${p}</strong>: ${window.gameLog.fmtCards(dealtHands[p])}`
+      });
+    });
 
     // Rotate start player.
     const { roundStarterIdx } = getState();

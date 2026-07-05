@@ -681,19 +681,29 @@
     // BUG FIX #4: clear hardWindow if AI still has cards.
     window.scoring.clearHardWindowIfNeeded(playerIdx);
 
-    window.gameLog?.logDiscard(player, discarded);
+    window.gameLog?.logDiscard(myPlayer, discarded);   // was: logDiscard(player, ...) — ReferenceError
 
     const newDiscard = [...state.discardPile, discarded];
     setState({ hands: newHands, discardPile: newDiscard });
 
     window.cardRenderer.renderCardArray(hand, document.getElementById(`hand-${playerIdx}`), false, playerIdx, 'hand');
     window.cardRenderer.renderDiscardPile();
-    window.scoring.updatePlayerStats(getState().hands);
 
-    if (!getState().roundFinished) {
-      const nextIdx = (playerIdx + 1) % state.players.length;
-      window.resetTurnState(nextIdx);
-    }
+    // Use same total-card count as human discard path and updatePlayerStats.
+    const freshState  = getState();
+    const hasLaid     = freshState.laidDownPlayers.has(playerIdx);
+    const totalCards  = hasLaid
+      ? (freshState.hands[myPlayer] || []).length
+      : (freshState.hands[myPlayer] || []).length +
+        (freshState.subcontractCards[myPlayer] || []).length;
+
+    const roundEnded = window.scoring.updatePlayerStats(freshState.hands);
+
+    if (totalCards === 0 || roundEnded || getState().roundFinished) return;
+
+    // Advance turn — this triggers the buy clock via resetTurnState.
+    const nextIdx = (playerIdx + 1) % state.players.length;
+    window.resetTurnState(nextIdx);
   }
 
   // ─── Global insert index helper ───────────────────────────────────────────

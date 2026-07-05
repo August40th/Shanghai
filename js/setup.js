@@ -457,7 +457,8 @@ function saveSettingsToCookies() {
     buyClock: document.getElementById('buyClockRange').value,
     softShanghaiChk: document.getElementById('softShanghaiChk').checked,
     hardShanghaiChk: document.getElementById('hardShanghaiChk').checked,
-    finalShanghaiChk: document.getElementById('finalShanghaiChk').checked
+    finalShanghaiChk: document.getElementById('finalShanghaiChk').checked,
+    debugAiChk: document.getElementById('debugAiChk').checked
   };
   setCookie('customRules', JSON.stringify(customRules));
 
@@ -493,6 +494,7 @@ function loadSettingsFromCookies() {
       document.getElementById('softShanghaiChk').checked = cr.softShanghaiChk ?? false;
       document.getElementById('hardShanghaiChk').checked = cr.hardShanghaiChk ?? true;
       document.getElementById('finalShanghaiChk').checked = cr.finalShanghaiChk ?? false;
+      document.getElementById('debugAiChk').checked = cr.debugAiChk ?? false;
 
       if (cr.buyClock !== undefined) {
         document.getElementById('buyClockRange').value = cr.buyClock;
@@ -566,6 +568,7 @@ document.getElementById('wildTypeBtn').addEventListener('click', () => { saveSet
 document.getElementById('wildSwapBtn').addEventListener('click', () => { saveSettingsToCookies(); updateSummary(); });
 document.getElementById('buyClockRange').addEventListener('input', () => { saveSettingsToCookies(); updateSummary(); });
 document.getElementById('humanNameInput').addEventListener('input', saveSettingsToCookies);
+document.getElementById('debugAiChk').addEventListener('change', saveSettingsToCookies);
 document.getElementById('decComp').addEventListener('click', saveSettingsToCookies);
 document.getElementById('incComp').addEventListener('click', saveSettingsToCookies);
 document.getElementById('randomizeBtn').addEventListener('click', saveSettingsToCookies);
@@ -585,35 +588,39 @@ updateTablePreview();
 updateCardBackPreview();
 updateTableCardBackPreview();
 
-// CHANGED: Store AI data with game setup
 document.querySelector('.start-btn').addEventListener('click', () => {
-  const humanName = document.getElementById('humanNameInput').value.trim() || 'Player1';
-  const compNames = [];
+  const humanName   = document.getElementById('humanNameInput').value.trim() || 'Player1';
+  const debugAI     = document.getElementById('debugAiChk').checked;
+  const compNames   = [];
   const compDifficulties = [];
-  
+
   document.querySelectorAll('#playersGrid .player-slot:not(.inactive)').forEach((slot, i) => {
-    const input = slot.querySelector('input.player-name-input');
+    const input   = slot.querySelector('input.player-name-input');
     const diffBtn = slot.querySelector('button.difficulty-btn');
     if (input) {
       const val = input.value.trim();
       if (val) {
         compNames.push(val);
-        compDifficulties.push(diffBtn ? diffBtn.textContent : "Medium");
+        compDifficulties.push(diffBtn ? diffBtn.textContent : 'Medium');
       }
     }
   });
-  
+
   const playerNames = [humanName, ...compNames];
   if (playerNames.length < 3) {
     alert('Please have at least 3 players to start the game.');
     return;
   }
 
-  // CHANGED: Store AI info with game setup
-  localStorage.setItem('gameSetup', JSON.stringify({ 
+  // Debug mode: treat player 0 (human) as an AI using the first computer's
+  // difficulty, so all players run autonomously and can be observed via the Game Log.
+  const humanIsAI   = debugAI;
+  const humanDiff   = debugAI ? (compDifficulties[0] || 'Medium') : null;
+
+  localStorage.setItem('gameSetup', JSON.stringify({
     playerNames,
-    isAI: [false, ...compNames.map(() => true)],
-    difficulties: [null, ...compDifficulties]
+    isAI:        [humanIsAI, ...compNames.map(() => true)],
+    difficulties: [humanDiff, ...compDifficulties]
   }));
 
   window.location.href = 'table.html';
