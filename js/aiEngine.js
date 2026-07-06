@@ -13,10 +13,16 @@
   const { getState, setState, ROUND_REQUIREMENTS } = window.gameState;
   const { isWild, isValidSet, isValidRun }         = window.validator;
 
-  // ─── Rank numeric values (used throughout for gap / sequence math) ─────────
+  // Card rank values for sequence math (Ace = 1 low by default).
   const RANK_VAL = {
     'A':1, '2':2,  '3':3,  '4':4,  '5':5,  '6':6,  '7':7,
     '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13
+  };
+
+  // Point values for discard decisions — Ace is 15 pts, not 1.
+  const POINT_VAL = {
+    'A':15, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7,
+    '8':8, '9':9, '10':10, 'J':10, 'Q':10, 'K':10, 'W':20
   };
 
   // ─── Main entry point ─────────────────────────────────────────────────────
@@ -374,25 +380,33 @@
     // Set potential: at least one other card of the same rank.
     if (others.some(c => c.rank === card.rank)) return true;
 
-    // Run potential: at least one other non-wild card of the same suit
-    // within 3 ranks (adjacent enough to be worth keeping).
-    if (!isWild(card)) {
-      const cardVal   = RANK_VAL[card.rank] || 0;
-      const sameSuit  = others.filter(c => !isWild(c) && c.suit === card.suit);
-      if (sameSuit.some(c => Math.abs((RANK_VAL[c.rank] || 0) - cardVal) <= 3)) return true;
-    }
-
     // Wild cards are always worth keeping.
     if (isWild(card)) return true;
+
+    // Run potential: at least one other non-wild card of the same suit
+    // within 3 ranks. Check Ace as both low (1) and high (14).
+    const cardValLow  = RANK_VAL[card.rank] || 0;
+    const cardValHigh = card.rank === 'A' ? 14 : cardValLow;
+    const sameSuit    = others.filter(c => !isWild(c) && c.suit === card.suit);
+    if (sameSuit.some(c => {
+      const v = RANK_VAL[c.rank] || 0;
+      const vHigh = c.rank === 'A' ? 14 : v;
+      return Math.abs(v - cardValLow) <= 3 ||
+             Math.abs(v - cardValHigh) <= 3 ||
+             Math.abs(vHigh - cardValLow) <= 3 ||
+             Math.abs(vHigh - cardValHigh) <= 3;
+    })) return true;
 
     return false;
   }
 
   function _highestPoints(cards) {
     if (!cards.length) return null;
-    return cards.reduce((best, c) =>
-      window.scoring.calculateCardPoints(c) >= window.scoring.calculateCardPoints(best) ? c : best
-    );
+    return cards.reduce((best, c) => {
+      const pts  = isWild(c) ? 20 : (POINT_VAL[c.rank] || 0);
+      const bpts = isWild(best) ? 20 : (POINT_VAL[best.rank] || 0);
+      return pts >= bpts ? c : best;
+    });
   }
 
   // Returns true if `card` would contribute to completing a contract group
@@ -417,18 +431,20 @@
       // Run check — sort by rank before validating so positional check passes.
       const nonWilds = areaCards.filter(c => !isWild(c));
       if (nonWilds.length > 0 && (isWild(card) || card.suit === nonWilds[0].suit)) {
-        const withCard = [...areaCards, card];
-        const wilds    = withCard.filter(isWild);
-        const sorted   = withCard
-          .filter(c => !isWild(c))
-          .sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
-        // Reinsert wilds into gaps.
-        const reordered = _buildRunWithWilds(sorted, wilds);
-        if (reordered && isValidRun(reordered)) return true;
-        // Also check if the card simply extends either end.
-        const lowVal  = Math.min(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
-        const highVal = Math.max(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
-        const cardVal = RANK_VAL[card.rank] || 0;
+        const withCard   = [...areaCards, card];
+        const wilds      = withCard.filter(c => isWild(c));
+        const nonWildAll = withCard.filter(c => !isWild(c));
+
+        // Try both low-ace and high-ace sort orders.
+        const sortVariants = _getSortedVariants(nonWildAll);
+        for (const sorted of sortVariants) {
+          const reordered = _buildRunWithWilds(sorted, wilds);
+          if (reordered && isValidRun(reordered)) return true;
+        }
+        // Also check simple end-extension with Ace-high.
+        const lowVal   = Math.min(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
+        const highVal  = Math.max(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
+        const cardVal  = RANK_VAL[card.rank] || 0;
         const cardHigh = card.rank === 'A' ? 14 : cardVal;
         if (cardVal === lowVal - 1 || cardHigh === highVal + 1) return true;
       }
@@ -482,11 +498,8 @@
   // that could be played onto any currently laid-down contract on the table.
   // This captures the "holding 4-5♥ + discard is 6♥" pattern.
   function _cardExtendsHandSequence(card, hand, playerIdx) {
-    const { players, subcontractCards, laidDownPlayers } = getState();
-    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
+    const { laidDownPlayers } = getState();
 
-    // Build potential plays: the new card combined with same-suit hand cards.
     const sameSuitHand = isWild(card) ? hand : hand.filter(c =>
       !isWild(c) && c.suit === card.suit
     );
@@ -494,8 +507,6 @@
 
     const combined = [...sameSuitHand, card];
 
-    // Check if this combined group, or any subset of it, can be played
-    // sequentially onto any laid-down run.
     for (const [pi, pname] of getState().players.entries()) {
       if (!laidDownPlayers.has(pi)) continue;
       const subAreas = window.getSubcontractSubAreas(pi);
@@ -508,15 +519,18 @@
         if (!nonWilds.length) continue;
         const runSuit   = nonWilds[0].suit;
         if (!isWild(card) && card.suit !== runSuit) continue;
-        const lowVal    = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
-        const highVal   = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
-        const cardVal   = isWild(card) ? 0 : (rankValues[card.rank] || 0);
-        // The drawn card plus same-suit hand cards form a bridge to the run.
-        const relevant  = combined.filter(c =>
-          isWild(c) ||
-          ((rankValues[c.rank] || 0) >= lowVal - combined.length &&
-           (rankValues[c.rank] || 0) <= highVal + combined.length)
-        );
+        const lowVal    = Math.min(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
+        const highVal   = Math.max(...nonWilds.map(c => RANK_VAL[c.rank] || 0));
+        // Check if any combined card is within reach of this run's endpoints.
+        // Use both low and high Ace values.
+        const relevant = combined.filter(c => {
+          if (isWild(c)) return true;
+          const v     = RANK_VAL[c.rank] || 0;
+          const vHigh = c.rank === 'A' ? 14 : v;
+          const span  = combined.length;
+          return (v     >= lowVal  - span && v     <= highVal + span) ||
+                 (vHigh >= lowVal  - span && vHigh <= highVal + span);
+        });
         if (relevant.length >= 2) return true;
       }
     }
@@ -546,8 +560,6 @@
   }
 
   function _canExtendStagedContract(card, contractCards) {
-    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
     const byArea = {};
     contractCards.forEach(c => {
       if (!byArea[c.subArea]) byArea[c.subArea] = [];
@@ -564,20 +576,19 @@
       }
 
       // Run extension — check low and high ends explicitly with gap validation.
-      const nonWilds = areaCards.filter(c => !isWild(c));
+      const nonWilds    = areaCards.filter(c => !isWild(c));
       if (!nonWilds.length) continue;
-      const runSuit  = nonWilds[0].suit;
+      const runSuit     = nonWilds[0].suit;
       if (!isWild(card) && card.suit !== runSuit) continue;
-      const lowVal   = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
-      const highVal  = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
-      const cardValLow  = rankValues[card.rank] || 0;
+      const vals        = nonWilds.map(c => RANK_VAL[c.rank] || 0);
+      const lowVal      = Math.min(...vals);
+      const highVal     = Math.max(...vals);
+      const cardValLow  = RANK_VAL[card.rank] || 0;
       const cardValHigh = card.rank === 'A' ? 14 : cardValLow;
-      // Count wilds available in the area (can fill internal gaps).
-      const areaWilds = areaCards.filter(c => isWild(c)).length;
+      const areaWilds   = areaCards.filter(c => isWild(c)).length;
 
       if (cardValLow === lowVal - 1 || cardValHigh === highVal + 1 || isWild(card)) {
-        // Verify the resulting run has no unfillable gaps.
-        const testVals = [...nonWilds.map(c => rankValues[c.rank] || 0)];
+        const testVals = [...vals];
         if (!isWild(card)) testVals.push(cardValLow === lowVal - 1 ? cardValLow : cardValHigh);
         testVals.sort((a, b) => a - b);
         const gaps = _gapsInSortedVals(testVals);
@@ -588,69 +599,52 @@
   }
 
   function _wouldCompleteContractGroup(card, contractCards, hand, status) {
-    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
-
     // Set completion — needs matching rank cards in staged + hand.
     if (status.needsSets > 0) {
       const sameRankStaged = contractCards.filter(c => !isWild(c) && c.rank === card.rank);
       const sameRankHand   = hand.filter(c => !isWild(c) && c.rank === card.rank);
-      const totalSameRank  = sameRankStaged.length + sameRankHand.length;
-      // Drawing this card means we have totalSameRank+1 of this rank — enough for a set?
-      if (totalSameRank >= 2) return true; // completes a 3-card set minimum
+      if (sameRankStaged.length + sameRankHand.length >= 2) return true;
     }
 
     // Run completion — check whether the card slots into a staged run group
     // at either end AND the resulting run is achievable (all gaps fillable
     // with wilds currently in hand or staged).
     if (status.needsRuns > 0) {
-      const byArea = {};
+      const byArea    = {};
       contractCards.forEach(c => {
         if (!byArea[c.subArea]) byArea[c.subArea] = [];
         byArea[c.subArea].push(c);
       });
-
-      // Count wilds available — in hand plus already staged.
       const wildCount = [...hand, ...contractCards].filter(c => isWild(c)).length;
 
       for (const areaCards of Object.values(byArea)) {
-        const nonWilds = areaCards.filter(c => !isWild(c));
+        const nonWilds    = areaCards.filter(c => !isWild(c));
         if (!nonWilds.length) continue;
-        const runSuit  = nonWilds[0].suit;
+        const runSuit     = nonWilds[0].suit;
         if (!isWild(card) && card.suit !== runSuit) continue;
-        const lowVal   = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
-        const highVal  = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
-        const cardValLow  = rankValues[card.rank] || 0;
+        const vals        = nonWilds.map(c => RANK_VAL[c.rank] || 0);
+        const lowVal      = Math.min(...vals);
+        const highVal     = Math.max(...vals);
+        const cardValLow  = RANK_VAL[card.rank] || 0;
         const cardValHigh = card.rank === 'A' ? 14 : cardValLow;
 
-        // Card extends at low end.
-        if (!isWild(card) && cardValLow === lowVal - 1) {
-          // Check all gaps in the resulting run are coverable.
-          const allVals  = [...nonWilds.map(c => rankValues[c.rank] || 0), cardValLow].sort((a, b) => a - b);
-          const gaps     = _gapsInSortedVals(allVals);
-          if (gaps <= wildCount) return true;
-        }
-        // Card extends at high end (Ace treated as 14 for K-high runs).
-        if (cardValHigh === highVal + 1) {
-          const allVals  = [...nonWilds.map(c => rankValues[c.rank] || 0), cardValHigh].sort((a, b) => a - b);
-          const gaps     = _gapsInSortedVals(allVals);
-          if (gaps <= wildCount) return true;
-        }
-        // Wild always extends if gaps are coverable.
-        if (isWild(card)) {
-          const allVals  = nonWilds.map(c => rankValues[c.rank] || 0).sort((a, b) => a - b);
-          const gaps     = _gapsInSortedVals(allVals);
-          if (gaps <= wildCount) return true;
-        }
+        const tryExtend = (testVal) => {
+          const allVals = [...vals, testVal].sort((a, b) => a - b);
+          return _gapsInSortedVals(allVals) <= wildCount;
+        };
+
+        if (!isWild(card) && cardValLow === lowVal - 1 && tryExtend(cardValLow)) return true;
+        if (cardValHigh === highVal + 1 && tryExtend(cardValHigh)) return true;
+        if (isWild(card) && _gapsInSortedVals(vals.slice().sort((a,b)=>a-b)) <= wildCount) return true;
       }
 
       // Does the card combine with same-suit hand cards to form or extend a run?
       if (!isWild(card)) {
         const sameSuitHand = hand.filter(c => !isWild(c) && c.suit === card.suit);
         if (sameSuitHand.length >= 2) {
-          const cardValLow  = rankValues[card.rank] || 0;
+          const cardValLow  = RANK_VAL[card.rank] || 0;
           const cardValHigh = card.rank === 'A' ? 14 : cardValLow;
-          const vals    = sameSuitHand.map(c => rankValues[c.rank] || 0).sort((a, b) => a - b);
+          const vals    = sameSuitHand.map(c => RANK_VAL[c.rank] || 0).sort((a, b) => a - b);
           const low     = vals[0];
           const high    = vals[vals.length - 1];
           if (cardValLow === low - 1 || cardValHigh === high + 1 ||
@@ -663,22 +657,27 @@
   }
 
   function _formsNewGroupInHand(card, hand, status) {
-    // Sets: worth taking if there is already 1+ of the same rank in hand —
-    // builds a pair which is one step from a complete set.
+    // Sets: worth taking if there is already 1+ of the same rank in hand.
     if (status.needsSets > 0) {
       const sameRank = hand.filter(c => !isWild(c) && c.rank === card.rank);
       if (sameRank.length >= 1) return true;
     }
 
-    // Runs: worth taking if the card is within 3 ranks of a same-suit card
-    // in hand — reasonable run seed even at early stages.
+    // Runs: only worth taking from the discard if there is already at least
+    // 1 same-suit card within 2 ranks (directly adjacent or 1-gap).
+    // A gap of 3 is too speculative — the AI was drawing cards it immediately
+    // discarded because they didn't fit the staged run.
     if (status.needsRuns > 0 && !isWild(card)) {
-      const sameSuit = hand.filter(c => !isWild(c) && c.suit === card.suit);
-      if (sameSuit.length >= 1) {
-        const cardVal    = RANK_VAL[card.rank] || 0;
-        const suitValues = sameSuit.map(c => RANK_VAL[c.rank] || 0);
-        if (suitValues.some(v => Math.abs(v - cardVal) <= 3)) return true;
-      }
+      const cardValLow  = RANK_VAL[card.rank] || 0;
+      const cardValHigh = card.rank === 'A' ? 14 : cardValLow;
+      const sameSuit    = hand.filter(c => !isWild(c) && c.suit === card.suit);
+      if (sameSuit.some(c => {
+        const v     = RANK_VAL[c.rank] || 0;
+        const vHigh = c.rank === 'A' ? 14 : v;
+        return Math.abs(v - cardValLow) <= 2 ||
+               Math.abs(v - cardValHigh) <= 2 ||
+               Math.abs(vHigh - cardValLow) <= 2;
+      })) return true;
     }
 
     return false;
@@ -731,7 +730,9 @@
       runAreas.forEach(areaIdx => {
         const available     = regulars.filter(c => !usedIds.has(c._id));
         const availRunWilds = runWilds.filter(c => !usedIds.has(c._id));
-        const bestRun       = _findBestRun(available, availRunWilds);
+        // Pass total run slots needed so _findBestRun knows to penalise
+        // very long single runs when a split would fill two slots.
+        const bestRun = _findBestRun(available, availRunWilds, runAreas.length);
         if (bestRun) {
           staging[areaIdx] = bestRun.cards;
           bestRun.cards.forEach(c => usedIds.add(c._id));
@@ -852,7 +853,10 @@
 
   // ─── Run-finding helpers ──────────────────────────────────────────────────
 
-  function _findBestRun(availableCards, availableWilds) {
+  // Finds the best single run from availableCards using availableWilds.
+  // numRunsNeeded > 1 triggers split-run logic: if one suit has enough cards
+  // for two valid runs, prefer the split over one long run.
+  function _findBestRun(availableCards, availableWilds, numRunsNeeded = 1) {
     const bySuit = {};
     availableCards.forEach(c => {
       if (!bySuit[c.suit]) bySuit[c.suit] = [];
@@ -864,32 +868,39 @@
     Object.entries(bySuit).forEach(([suit, cards]) => {
       if (!cards.length) return;
 
-      // Try Ace as both low (1) and high (14) by generating two sorted
-      // versions for each suit when Aces are present.
       const sortedVersions = _getSortedVariants(cards);
 
       sortedVersions.forEach(sorted => {
-        // Try all subsets. The minimum real-card subset is 1 card (if we have
-        // enough wilds to reach 4 total), max is all cards up to length 8.
         for (let i = 0; i < sorted.length; i++) {
           for (let j = i + 1; j <= sorted.length && j <= i + 8; j++) {
-            const subset    = sorted.slice(i, j);
-            const gaps      = _countGaps(subset);
-            const totalLen  = subset.length + gaps; // real cards + gap fills
-            // Need at least 4 total (real + wilds filling gaps).
+            const subset = sorted.slice(i, j);
+            const gaps   = _countGaps(subset);
+            const totalLen = subset.length + gaps;
             if (totalLen < 4) continue;
-            // Need enough wilds to fill all gaps.
             if (gaps > availableWilds.length) continue;
 
             const wildsToUse = availableWilds.slice(0, gaps);
             const runCards   = _buildRunWithWilds(subset, wildsToUse);
+            if (!runCards || !isValidRun(runCards)) continue;
 
-            if (runCards && isValidRun(runCards)) {
-              const value = _runValue(runCards);
-              if (value > bestValue) {
-                bestValue = value;
-                bestRun   = { cards: runCards, wildsUsed: wildsToUse.length };
+            // When multiple runs are needed, penalise very long runs from a
+            // single suit — a split into two 4-card runs is better than one
+            // 8-card run that leaves the second run slot empty.
+            let value = _runValue(runCards);
+            if (numRunsNeeded > 1 && runCards.length > 6) {
+              // Check whether this suit can also support a second valid run
+              // from the remaining cards after the current run.
+              const usedIds = new Set(runCards.map(c => c._id));
+              const remaining = cards.filter(c => !usedIds.has(c._id));
+              if (remaining.length >= 4) {
+                // Prefer the shorter run so the other slot gets filled too.
+                value *= 0.6;
               }
+            }
+
+            if (value > bestValue) {
+              bestValue = value;
+              bestRun   = { cards: runCards, wildsUsed: wildsToUse.length };
             }
           }
         }
@@ -911,16 +922,31 @@
 
     let best = [];
     Object.values(bySuit).forEach(cards => {
-      if (cards.length <= best.length) return;
-      // Sort by rank value ascending.
-      const sorted = [...cards].sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
-      // Find the longest consecutive-ish run seed (cards within 3 ranks of each other).
-      // This picks the most connected group, not just all same-suit cards.
-      let bestChain = [sorted[0]];
-      let currentChain = [sorted[0]];
+      // Deduplicate by rank within each suit — a run can only hold one card
+      // per rank position, so two J♠ or two A♦ should not both be staged.
+      const seenRanks = new Set();
+      const unique    = cards.filter(c => {
+        if (seenRanks.has(c.rank)) return false;
+        seenRanks.add(c.rank);
+        return true;
+      });
+
+      if (unique.length <= best.length) return;
+
+      // Sort by rank value ascending (Ace low for partial seeds).
+      const sorted = [...unique].sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
+
+      // Find the longest chain where consecutive cards are within 3 ranks.
+      // A "chain" here is a sequence of distinct-rank same-suit cards that
+      // could eventually form a valid run with wilds filling gaps.
+      let bestChain   = sorted.length > 0 ? [sorted[0]] : [];
+      let currentChain = sorted.length > 0 ? [sorted[0]] : [];
+
       for (let i = 1; i < sorted.length; i++) {
-        const gap = (RANK_VAL[sorted[i].rank] || 0) - (RANK_VAL[sorted[i - 1].rank] || 0);
-        if (gap <= 3) {
+        const prevVal = RANK_VAL[sorted[i - 1].rank] || 0;
+        const currVal = RANK_VAL[sorted[i].rank]     || 0;
+        const gap     = currVal - prevVal; // Always > 0 since ranks are unique+sorted.
+        if (gap >= 1 && gap <= 3) {
           currentChain.push(sorted[i]);
         } else {
           if (currentChain.length > bestChain.length) bestChain = currentChain;
@@ -934,18 +960,41 @@
     return best;
   }
 
-  // Returns one or two sorted versions of a suit's cards — always low-ace
-  // order, plus a high-ace version (Ace = 14) when Aces are present.
-  // This lets _findBestRun find J-Q-K-A runs correctly.
+  // Returns sorted variants of a suit's cards to try in _findBestRun.
+  // Always returns low-ace sort. Adds high-ace (A=14) when Aces present.
+  // Adds wrap-around variants (Q-K-A-2-3 etc.) when wrapAround rule is on.
   function _getSortedVariants(cards) {
-    const lowSort  = [...cards].sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
-    const hasAce   = cards.some(c => c.rank === 'A');
-    if (!hasAce) return [lowSort];
+    const lowSort    = [...cards].sort((a, b) => (RANK_VAL[a.rank] || 0) - (RANK_VAL[b.rank] || 0));
+    const hasAce     = cards.some(c => c.rank === 'A');
+    const wrapAround = window.gameRules?.wrapAround ?? false;
 
-    // High-ace sort: treat Ace as 14.
-    const highAceVal = c => c.rank === 'A' ? 14 : (RANK_VAL[c.rank] || 0);
-    const highSort = [...cards].sort((a, b) => highAceVal(a) - highAceVal(b));
-    return [lowSort, highSort];
+    const variants = [lowSort];
+
+    if (hasAce) {
+      const highAceVal = c => c.rank === 'A' ? 14 : (RANK_VAL[c.rank] || 0);
+      variants.push([...cards].sort((a, b) => highAceVal(a) - highAceVal(b)));
+    }
+
+    // For wrap-around: generate all cyclic rotations of the rank sequence
+    // so that K-A-2-3 sorts as 13-14-2-3 is found naturally.
+    // We model this by assigning "wrap rank" = rank + 13 for cards below the
+    // wrap point, then sorting. We try all 13 possible wrap points.
+    if (wrapAround && cards.length >= 2) {
+      for (let wrapAt = 2; wrapAt <= 13; wrapAt++) {
+        const wrapVal = c => {
+          const v = c.rank === 'A' ? 14 : (RANK_VAL[c.rank] || 0);
+          return v < wrapAt ? v + 13 : v;
+        };
+        const wrapSort = [...cards].sort((a, b) => wrapVal(a) - wrapVal(b));
+        // Only add if it produces a meaningfully different order.
+        const key = wrapSort.map(c => c._id ?? `${c.rank}${c.suit}`).join(',');
+        if (!variants.some(v => v.map(c => c._id ?? `${c.rank}${c.suit}`).join(',') === key)) {
+          variants.push(wrapSort);
+        }
+      }
+    }
+
+    return variants;
   }
 
   // Inserts wilds into the gap positions of a sorted run subset so the
@@ -990,6 +1039,15 @@
     return gaps;
   }
 
+  // Count gaps in a pre-computed sorted value array (used for wrap variants).
+  function _countGapsInVals(sortedVals) {
+    let gaps = 0;
+    for (let i = 0; i < sortedVals.length - 1; i++) {
+      gaps += Math.max(0, sortedVals[i + 1] - sortedVals[i] - 1);
+    }
+    return gaps;
+  }
+
   function _gapsInSortedVals(sortedVals) {
     let gaps = 0;
     for (let i = 0; i < sortedVals.length - 1; i++) {
@@ -1000,10 +1058,11 @@
 
   function _runValue(cards) {
     const nonWilds = cards.filter(c => !isWild(c));
-    const avgRank  = nonWilds.length
-      ? nonWilds.reduce((s, c) => s + (RANK_VAL[c.rank] || 5), 0) / nonWilds.length
+    // Use POINT_VAL so Aces score 15, face cards 10, not sequence rank 1/10/11/12/13.
+    const avgPoints = nonWilds.length
+      ? nonWilds.reduce((s, c) => s + (POINT_VAL[c.rank] || 5), 0) / nonWilds.length
       : 5;
-    return cards.length * 15 + avgRank;
+    return cards.length * 15 + avgPoints;
   }
 
   // ─── Buy decision ─────────────────────────────────────────────────────────
@@ -1085,13 +1144,8 @@
   // Returns how many cards in `hand` can be played onto any currently
   // laid-down contract on the table.
   function _countPlayableCards(hand, playerIdx) {
-    const { players, subcontractCards, laidDownPlayers } = getState();
-    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
     let count = 0;
     const usedCardIds = new Set();
-
-    // Simulate plays greedily — each card at most once.
     for (const card of hand) {
       if (usedCardIds.has(card._id)) continue;
       const target = window.validator.canPlayOnExistingContracts(card, playerIdx);
@@ -1123,15 +1177,15 @@
         byArea[c.subArea].push(c);
       });
       for (const areaCards of Object.values(byArea)) {
-        const nonWilds = areaCards.filter(c => !isWild(c));
+        const nonWilds    = areaCards.filter(c => !isWild(c));
         if (!nonWilds.length) continue;
         if (!isWild(card) && card.suit !== nonWilds[0].suit) continue;
-        const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                             '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
-        const lowVal  = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
-        const highVal = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
-        const cardVal = rankValues[card.rank] || 0;
-        if (isWild(card) || cardVal === lowVal - 1 || cardVal === highVal + 1) {
+        const vals        = nonWilds.map(c => RANK_VAL[c.rank] || 0);
+        const lowVal      = Math.min(...vals);
+        const highVal     = Math.max(...vals);
+        const cardValLow  = RANK_VAL[card.rank] || 0;
+        const cardValHigh = card.rank === 'A' ? 14 : cardValLow;
+        if (isWild(card) || cardValLow === lowVal - 1 || cardValHigh === highVal + 1) {
           if (status.needsRuns === 1 && status.needsSets <= 0) return true;
         }
       }
@@ -1189,7 +1243,7 @@
     const player   = players[playerIdx];
     const hasLaid  = laidDownPlayers.has(playerIdx);
     const stagedIds = new Set((subcontractCards[player] || []).map(c => c._id));
-    const pts      = window.scoring?.calculateCardPoints(card) || 0;
+    const pts = isWild(card) ? 20 : (POINT_VAL[card.rank] || 0);
 
     if (hasLaid) {
       if (_isGiftCard(card, playerIdx)) {

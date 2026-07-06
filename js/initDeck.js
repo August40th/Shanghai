@@ -16,19 +16,17 @@ class initDeck {
   // Get rule settings — from HTML if available, otherwise defaults
   getRuleSettings() {
     if (typeof window !== "undefined" && window.gameRules) {
-      // Use values from the HTML or global gameRules object
       return {
-        extraDeck: window.gameRules.extraDeck ?? 0,
-        extraSuit: window.gameRules.extraSuit ?? false,
-        wildType: window.gameRules.wildType ?? "classic",
+        extraDeck:    window.gameRules.extraDeck    ?? 0,
+        extraSuit:    window.gameRules.extraSuit    ?? false,
+        wildType:     (window.gameRules.wildType    || 'classic').toLowerCase(),
         wildsEnabled: window.gameRules.wildsEnabled ?? true,
       };
     }
-    // Default fallback if not connected to HTML
     return {
-      extraDeck: 0,
-      extraSuit: true,
-      wildType: "classic",
+      extraDeck:    0,
+      extraSuit:    true,
+      wildType:     'classic',
       wildsEnabled: true,
     };
   }

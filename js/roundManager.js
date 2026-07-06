@@ -130,8 +130,8 @@
       extraSuit:     Boolean(rules.extraSuitChk),
       wrapAround:    Boolean(rules.wrapRunsChk),
       wildsEnabled:  rules.wildCardsChk !== false,
-      wildType:      rules.wildType  || 'classic',
-      wildSwap:      rules.wildSwap  || 'off',
+      wildType:      (rules.wildType  || 'classic').toLowerCase(),
+      wildSwap:      (rules.wildSwap  || 'off').toLowerCase(),
       fastBuy:       rules.fastBuyChk !== false,
       optOut:        Boolean(rules.optOutChk),
       selfDiscard:   Boolean(rules.selfDiscardChk),
@@ -375,7 +375,7 @@
   // ─── drawCardFrom ─────────────────────────────────────────────────────────
   // Shared draw path used by human clicks, buy clock, and AI draw step.
 
-  function drawCardFrom(source, playerIdx) {
+  function drawCardFrom(source, playerIdx, suppressLog = false) {
     const state = getState();
     if (playerIdx === undefined) playerIdx = state.currentTurnIdx;
     if (playerIdx < 0) return;
@@ -412,8 +412,8 @@
     const player    = state.players[playerIdx];
     newHands[player] = [...(newHands[player] || []), card];
 
-    // Log the draw action.
-    window.gameLog?.logDraw(player, source, card);
+    // Log the draw action (suppressed during buy operations to avoid duplicate entries).
+    if (!suppressLog) window.gameLog?.logDraw(player, source, card);
 
     const patch = {
       hands:       newHands,
@@ -778,7 +778,7 @@
     if (myBuying) {
       const topCard = state.discardPile[state.discardPile.length - 1];
       window.gameLog?.logBuy(state.players[newTurnIdx], topCard, true);
-      drawCardFrom('discard', newTurnIdx);
+      drawCardFrom('discard', newTurnIdx, true); // suppressLog — logBuy is the entry
       return;
     }
 
@@ -800,8 +800,9 @@
     window.gameLog?.logBuy(state.players[buyerIdx], boughtCard, false);
 
     // Buyer gets discard + draw-pile card and spends a buy.
-    drawCardFrom('draw',    buyerIdx);
-    drawCardFrom('discard', buyerIdx);
+    // Suppress individual draw logs — logBuy above is the single entry.
+    drawCardFrom('draw',    buyerIdx, true);
+    drawCardFrom('discard', buyerIdx, true);
     _decrementBuys(buyerIdx);
 
     // Remove HasDrawn from buyer (they bought between turns).
