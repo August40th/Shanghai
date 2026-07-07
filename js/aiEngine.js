@@ -83,7 +83,12 @@
     return new Promise(resolve => {
       setTimeout(() => {
         try {
-          const { players, hands, subcontractCards, discardPile, laidDownPlayers } = getState();
+          const state = getState();
+          // Already drew (e.g. took discard as veto in buy clock) — skip.
+          if (state.hasDrawn && state.currentTurnIdx === playerIdx) {
+            resolve(); return;
+          }
+          const { players, hands, subcontractCards, discardPile, laidDownPlayers } = state;
           const player   = players[playerIdx];
           const hand     = hands[player] || [];
           const hasLaid  = laidDownPlayers.has(playerIdx);
@@ -1274,6 +1279,7 @@
   window.aiEngine = {
     executeAITurn,
     shouldBuy,
+    _discardHelpsAI,
   };
 
   // Back-compat alias.

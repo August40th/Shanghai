@@ -97,7 +97,11 @@
   function _loadRules() {
     try {
       const crStr = getCookie('customRules');
-      return crStr ? JSON.parse(crStr) : {};
+      if (!crStr) return {};
+      const rules = JSON.parse(crStr);
+      // Ensure wildType is always present — stale cookies may be missing it.
+      if (!rules.wildType) rules.wildType = 'Classic';
+      return rules;
     } catch { return {}; }
   }
 
@@ -141,7 +145,9 @@
       finalShanghai: Boolean(rules.finalShanghaiChk),
     };
 
-    // AI data (isAI[], difficulties[]) is stored inside gameSetup by setup.js.
+    console.log('[Shanghai] gameRules:', JSON.stringify(window.gameRules));
+    window.gameLog?.log({ cat: { label: 'Rules', color: '#f39c12' },
+      html: `Wild type: <strong>${window.gameRules.wildType}</strong> | Wilds enabled: <strong>${window.gameRules.wildsEnabled}</strong> | Extra suit: <strong>${window.gameRules.extraSuit}</strong>` });
     let aiData = null;
     try {
       const raw = localStorage.getItem('gameSetup');
@@ -719,20 +725,38 @@
             if (lbl?.textContent !== getState().players[i]) return;
 
             if (isMyTurn) {
-              // The newTurnIdx player is also AI — they never veto their own
-              // draw; auto-decline so allActed() can fire and collapse the clock.
-              const declBtn = wrap.querySelectorAll('.buy-clock-btn')[1];
-              if (declBtn && !declBtn.disabled) {
-                window.gameLog?.logDecline(getState().players[i]);
-                declBtn.click();
+              // The myTurn AI player evaluates whether to take the discard
+              // as their draw for this turn (no buy spent, veto right).
+              const { hands, subcontractCards, laidDownPlayers } = getState();
+              const player  = getState().players[i];
+              const hand    = hands[player] || [];
+              const hasLaid = laidDownPlayers.has(i);
+              // Use the same draw-decision logic as _aiDraw.
+              const wantsTake = window.aiEngine._discardHelpsAI
+                ? window.aiEngine._discardHelpsAI(topDiscard, hand, i, hasLaid)
+                : false;
+
+              if (wantsTake) {
+                const btn = wrap.querySelector('.buy-clock-btn');
+                if (btn && !btn.disabled) {
+                  window.gameLog?.logBuy(getState().players[i], topDiscard, true);
+                  btn.click();
+                }
+              } else {
+                // Decline — auto-act so allActed() can fire.
+                const declBtn = wrap.querySelectorAll('.buy-clock-btn')[1];
+                if (declBtn && !declBtn.disabled) {
+                  window.gameLog?.logDecline(getState().players[i]);
+                  declBtn.click();
+                }
               }
               return;
             }
 
             const btn = wrap.querySelector('.buy-clock-btn');
             if (!btn || btn.disabled) return;
-            const wantsToBuy = window.aiEngine.shouldBuy(i, topDiscard);
-            if (wantsToBuy) {
+            const wantsBuy = window.aiEngine.shouldBuy(i, topDiscard);
+            if (wantsBuy) {
               window.gameLog?.logBuy(getState().players[i], topDiscard, false);
               btn.click();
               if (fastBuy && !clickOrder.includes(i)) clickOrder.push(i);
