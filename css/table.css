@@ -4,8 +4,11 @@
   --card-width: 45px;
   --card-height: 65px;
   --card-overlap: 15.75px;  /* 35% of 45px */
-  --player-width: 260px;
-  --contract-width: 320px;
+  /* Seat design width. Every player panel and contract area is laid out at
+     this width and then scaled as a unit by layoutPlayers() to fit the
+     viewport (see roundManager.js). */
+  --player-width: 400px;
+  --contract-width: 400px;
 }
 
 body, html {
@@ -42,12 +45,28 @@ body, html {
   z-index: 9999;
   color: white;
   cursor: pointer;
+  transform-origin: center center;   /* scaled by layoutPiles() */
 }
 
 .player {
   position: absolute;
-  transform: translate(-50%, -50%);
+  left: 0;
+  top: 0;
+  /* Position + scale are written inline by layoutPlayers(). */
+  transform-origin: 0 0;
+  box-sizing: border-box;
   width: var(--player-width);
+  /* The seat itself is transparent: it holds an info card and a separate hand tray. */
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  user-select: none;
+  z-index: 1000;
+}
+
+.player-info {
   background: rgba(255 255 255 / 0.95);
   border-radius: 12px;
   padding: 8px 12px;
@@ -55,15 +74,24 @@ body, html {
   display: flex;
   flex-direction: column;
   align-items: center;
-  user-select: none;
-  z-index: 1000;
-  /* CHANGED: Added max-width constraint for small screens */
-  max-width: calc(100vw - 40px);
 }
 
-.MyTurn { background: #98fb98; }
-.MyTurn.HasDrawn { background: #ffffbf; }
-.Idiscarded { background: #FF9999; }
+/* Hand sits in its own darker tray, apart from the nameplate and stats. */
+.hand-tray {
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.35);
+}
+.hand-tray .hand-area { width: auto; }
+
+/* Turn state colours the info card. */
+.player.MyTurn .player-info { background: #98fb98; }
+.player.MyTurn.HasDrawn .player-info { background: #ffffbf; }
+.player.Idiscarded .player-info { background: #FF9999; }
 
 .nameplate {
   font-weight: bold;
@@ -96,29 +124,41 @@ body, html {
 
 .lay-down-btn:disabled { opacity: 0.6; }
 
+/* Stats: two columns (Buys/Cards left, Held/Score right) with the buy controls
+   sandwiched between them. */
 .stats {
   width: 100%;
-  display: flex;            
-  flex-direction: column;
-  gap: 4px;
-  font-size: 14px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
   color: #333;
 }
-
-.stats > div {
+.stats-col {
   display: flex;
-  justify-content: space-between;
-  width: 100%;
-  box-sizing: border-box;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
+.stats-right { text-align: right; }
 
 /* CHANGED: Contract area with responsive width */
 .contract-area {
   position: absolute;
-  width: min(var(--contract-width), 90vw);
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  /* Staging area sizes to its contents (up to the seat width) and is centred
+     under/over its player by layoutPlayers(). */
+  width: fit-content;
+  min-width: 190px;
+  max-width: var(--contract-width);
   height: auto;
   min-height: 90px;
-  background: white;
+  background: transparent;   /* staging area is see-through; each sub-area keeps its own white */
   border-radius: 10px;
   border: 2px solid #444;
   font-weight: bold;
@@ -127,10 +167,8 @@ body, html {
   line-height: 75px;
   color: #111;
   user-select: none;
-  box-shadow: 0 0 6px rgba(0,0,0,0.3);
   pointer-events: auto;
   z-index: 500;
-  transform: translate(-50%, 0);
   padding: 8px;
 }
 
@@ -180,32 +218,37 @@ body, html {
 .contract-subareas-wrapper {
   display: flex;
   flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 8px;
+  flex-wrap: wrap;          /* sub-areas wrap onto new lines instead of growing sideways */
+  justify-content: center;  /* ...and each line is centred in the staging area */
+  gap: 6px;
   padding: 4px;
   border: 1px dashed #3a2e01;
   border-radius: 6px;
   min-width: 0;
+  line-height: normal;
 }
 
 .contract-subarea {
   flex: 0 0 auto;
   flex-shrink: 0;
-  max-width: none;
+  max-width: 100%;
   min-width: 0;
   padding: 2px;
   border-radius: 4px;
   border: 1px solid #000;
   background-color: #fff;
   display: flex;
+  flex-direction: column-reverse;   /* label sits BELOW the staged cards */
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 2px;
   font-size: 0.85rem;
   font-weight: 500;
   box-sizing: border-box;
   min-height: 75px;
   user-select: none;
 }
+.contract-subarea > span:first-child { font-size: 0.72rem; line-height: 1; opacity: 0.85; white-space: nowrap; }
 
 .contract-subarea.isValid { background-color: #98fb98; }
 
@@ -313,77 +356,75 @@ body, html {
   user-select: none;
 }
 
-/* CHANGED: Responsive buy clock popup */
+/* Buy clock: compact panel centred on the piles so staging areas stay visible.
+   Drag the title to move it. */
 .buy-clock-popup {
   position: fixed;
   top: 50%;
   left: 50%;
-  /* CHANGED: Responsive sizing instead of fixed 1500x600 */
-  width: 90vw;
-  max-width: 800px;
-  height: auto;
+  width: fit-content;
+  max-width: min(92vw, 640px);
   max-height: 80vh;
   transform: translate(-50%, -50%);
-  background: linear-gradient(to bottom, #0b722d 0%, #064219 100%);
-  border: 8px solid #ffeb3b;
+  background: rgba(6, 66, 25, 0.94);
+  border: 3px solid #ffeb3b;
   color: white;
   font-family: Arial, sans-serif;
   font-weight: bold;
-  padding: 20px 24px;
-  border-radius: 16px;
-  z-index: 15000;
+  padding: 8px 12px 10px;
+  border-radius: 12px;
+  z-index: 2147483000;
   user-select: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 6px;
   box-sizing: border-box;
   text-align: center;
-  /* CHANGED: Scroll if content overflows */
   overflow-y: auto;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
 }
 
 .buy-clock-title {
-  font-size: 28px;
+  font-size: 14px;
   margin: 0;
   user-select: none;
+  touch-action: none;
 }
 
 .buy-clock-discard-wrapper {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 12px;
   justify-content: center;
   width: 100%;
 }
 
 .buy-clock-discard-card {
-  width: 120px !important;
-  height: 160px !important;
+  position: relative !important;
+  flex: none;
   pointer-events: none;
   user-select: none;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.75);
-  border-radius: 8px !important;
-  top: 20px;
-  left: 20px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.75);
+  border-radius: 6px !important;
+  top: 0 !important;
+  left: 0 !important;
+  margin: 0 !important;
 }
 
 .buy-clock-countdown {
-  font-size: 52px;
+  font-size: clamp(34px, 5vh, 56px);
   font-weight: 900;
   color: #ffeb3b;
   user-select: none;
-  min-width: 64px;
+  min-width: 56px;
 }
 
-/* CHANGED: Responsive button wrapper with flex-wrap */
 .buy-clock-buttons-wrapper {
   display: flex;
-  gap: 16px;
+  gap: 8px 10px;
   width: 100%;
   justify-content: center;
-  padding-bottom: 8px;
-  /* CHANGED: Allow wrapping on small screens */
   flex-wrap: wrap;
 }
 
@@ -391,33 +432,36 @@ body, html {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 110px;
+  min-width: 84px;
   user-select: none;
 }
 
 .buy-clock-player-name {
   font-weight: 700;
   color: #ffe680;
-  margin-bottom: 6px;
-  font-size: 16px;
+  margin-bottom: 3px;
+  font-size: 13px;
   white-space: nowrap;
   user-select: text;
 }
 
 .buy-clock-btn {
-  padding: 8px 14px;
+  padding: 4px 8px;
   font-weight: 700;
+  font-size: 12px;
   background-color: #555;
   border: none;
   border-radius: 6px;
   color: #ccc;
   cursor: pointer;
   user-select: none;
-  width: 110px;
+  width: 84px;
   transition: background-color 0.3s ease, color 0.3s ease;
-  /* CHANGED: Minimum touch target size */
-  min-height: var(--touch-target-min);
+  min-height: 28px;
 }
+
+/* A clear gap between Buy and Decline to avoid mis-clicks. */
+.buy-clock-player-wrap .buy-clock-btn + .buy-clock-btn { margin-top: 10px !important; }
 
 .buy-clock-btn.buying {
   background-color: #2ecc71;
@@ -481,4 +525,154 @@ body, html {
   .card .rank {
     font-size: 18px; /* 14px * 1.3 */
   }
+}
+
+/* ── Computer hands / staging: card backs ─────────────────────────────────
+   Computer players' cards are shown face-down (your own card-back design, published
+   as --card-back by cardRenderer). Hands are drawn as a compact stack. Debug mode
+   (computers only) shows faces; there the H key toggles this stack view. */
+.card.face-down {
+  background: var(--card-back, repeating-linear-gradient(45deg,#1b3a6b 0 6px,#264d8f 6px 12px)) !important;
+  border: 3px solid var(--card-back-outline, #fff) !important;
+}
+.card.face-down > * { visibility: hidden; }
+.compact-hands .player.is-ai .hand-area { width: 90px !important; }
+.compact-hands .player.is-ai .hand-area .card {
+  margin-left: -38px !important;
+  background: var(--card-back, repeating-linear-gradient(45deg,#1b3a6b 0 6px,#264d8f 6px 12px)) !important;
+  border: 3px solid var(--card-back-outline, #fff) !important;
+}
+.compact-hands .player.is-ai .hand-area .card:first-child { margin-left: 0 !important; }
+.compact-hands .player.is-ai .hand-area .card > * { visibility: hidden; }
+
+/* You can only use your own seat's controls: other seats' buttons / slider are inert
+   (the computers press theirs from script). */
+.player:not(.is-viewer) button,
+.player:not(.is-viewer) label,
+.player:not(.is-viewer) input { pointer-events: none; }
+
+/* Your seat (bottom-centre): hand in front, staging area behind it. */
+.player.is-viewer .player-info,
+.player.is-viewer .hand-tray {
+  box-shadow: 0 0 0 3px #ffd54f, 0 0 18px rgba(255,213,79,0.5);
+}
+
+
+/* ── Buy / Decline buttons live under each player's Lay Down button ─────────
+   Always visible; greyed out (disabled) while no buying round is open.        */
+.buy-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+}
+.buy-btns { display: flex; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.buy-controls .buy-clock-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  min-height: 26px;
+  padding: 2px 6px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+.buy-controls .buy-decline { background-color: #c9302c; color: #fff; margin: 0; }
+.buy-controls .buy-clock-btn:disabled { background-color: #b9b9b9; color: #858585; cursor: not-allowed; }
+.buy-controls .swap-undo-btn { flex: 0 0 auto; white-space: nowrap; background-color: #e0a800; color: #222; margin: 0; }
+.buy-controls .swap-undo-btn[hidden] { display: none; }
+.card.swap-target { outline: 3px solid #ffeb3b; outline-offset: -2px; box-shadow: 0 0 10px 3px rgba(255,235,59,.85); }
+.buy-controls .buy-decline:disabled { background-color: #d6b3b1; color: #8d7473; }
+
+/* Auto-decline slider (human seat only), beside the Decline button */
+.auto-decline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  flex: none;
+}
+.auto-decline-input { position: absolute; opacity: 0; pointer-events: none; }
+.auto-decline-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: #999;
+  flex: none;
+  transition: background 0.2s;
+}
+.auto-decline-track::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.auto-decline-input:checked + .auto-decline-track { background: #c9302c; }
+.auto-decline-input:checked + .auto-decline-track::after { transform: translateX(16px); }
+.auto-decline-input:focus-visible + .auto-decline-track { outline: 2px solid #ffeb3b; }
+
+/* Pre-round analysis clock: slim banner at the top centre (clear of every staging area). */
+.pre-round-clock {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  padding: 8px 18px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #ffeb3b;
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ── Recent log: the two latest public entries, between the piles and your seat ── */
+#recent-log {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+  visibility: hidden;
+}
+#recent-log .recent-log-row {
+  background: rgba(255,255,255,0.88);
+  color: #1b1b1b;
+  font: 13px Arial, sans-serif;
+  padding: 2px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.7;
+}
+#recent-log .recent-log-row.newest { opacity: 1; font-weight: 600; }
+
+/* Lay Down button once laid down: pastel amber (beats the green MyTurn colour). */
+.lay-down-btn.laid-down,
+.player.MyTurn .lay-down-btn.laid-down {
+  background-color: #ffe08a !important;
+  color: #5a3d00 !important;
+  opacity: 1;
+  cursor: default;
+}
+
+/* Longer buy-button labels ("Buy Discard", "Taking Discard") must fit their button. */
+.buy-controls .buy-clock-btn {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
 }

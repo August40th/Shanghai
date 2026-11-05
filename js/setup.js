@@ -49,8 +49,8 @@ function updateSummary() {
   if (wildCards) {
     let wildTypeDesc = {"Classic":"<strong>(3♦/3♥)</strong>","Extra":"<strong>(3♦/3♥/3★)</strong>","Joker":"<strong>(Jokers)</strong>"}[wildTypeBtn.textContent]||"";
     qsummary += `● <strong>WILD CARDS</strong> ${wildTypeDesc}: may be used as <strong>ANY</strong> rank/suit<br>`;
-    if (wildSwapBtn.textContent === "Pre") qsummary += "● Wild swap allowed before laying down<br>";
-    else if (wildSwapBtn.textContent === "Post") qsummary += "● Wild swap allowed anytime<br>";
+    if (wildSwapBtn.textContent === "Pre") qsummary += "● Wild swap: only before laying down (then you must lay down that turn)<br>";
+    else if (wildSwapBtn.textContent === "Post") qsummary += "● Wild swap: before or after laying down (before = you must lay down that turn)<br>";
   }
   
   qsummary += `● Players have <strong>${buyClock.value}s</strong> to declare a <strong>BUY</strong><br>`;
@@ -192,9 +192,13 @@ function updateWildButtons(){
 wildCardsChk.addEventListener('change', updateWildButtons);
 updateWildButtons();
 
+// "Extra" wilds are the 3s of the extra suit, so they are only an option when it is on.
+function allowedWildTypes(){ return document.getElementById('extraSuitChk').checked ? wildTypes : wildTypes.filter(t => t !== 'Extra'); }
 wildTypeBtn.addEventListener('click', () => {
   if (wildTypeBtn.classList.contains('disabled')) return;
-  wtIndex = (wtIndex + 1) % wildTypes.length;
+  const list = allowedWildTypes();
+  const cur = list.indexOf(wildTypeBtn.textContent);
+  wtIndex = wildTypes.indexOf(list[(cur + 1) % list.length]);
   wildTypeBtn.textContent = wildTypes[wtIndex];
   updateSummary();
 });
@@ -334,33 +338,39 @@ backEdgeColor2Btn.addEventListener("click", () => { colorPickerMode = "back-edge
 backEdgeColor3Btn.addEventListener("click", () => { colorPickerMode = "back-edge3"; createColorSquares(backColors.edge3, null); colorPickerPopup.style.display = "flex"; });
 backEdgeOutlineColorBtn.addEventListener("click", () => { colorPickerMode = "back-outline"; createColorSquares(backColors.outline, null); colorPickerPopup.style.display = "flex"; });
 
-function updatePreview() {
+// Previews mirror the real card renderer (cardRenderer.createCardDiv):
+//   hand / piles : card 112x152 (hand 72x96 has the same proportions), font = size x 0.65
+//   contract area / computer hands : card 45x65, font = size x 0.28
+// Both are drawn at a fixed zoom so the suit/rank sizes look exactly as in the game.
+function _drawPreview(el, w, h, zoom, factor) {
   if (!selectedSuitKey) return;
-  cardPreview.innerHTML = "";
-  const suitColor = suitColors[selectedSuitKey]?.symbol || "white";
-  const bgColor   = suitColors[selectedSuitKey]?.background || "black";
+  el.innerHTML = "";
+  const sc        = suitColors[selectedSuitKey] || {};
+  const suitColor = sc.symbol || "white";
+  const bgColor   = sc.background || "black";
   const suitSz    = +suitSizeSlider.value;
   const rankSz    = +rankSizeSlider.value;
-  const edgeWidth = backColors.edgeWidth || 2;
-  // Include all dimensions in cssText — it replaces ALL inline styles.
-  cardPreview.style.cssText = [
-    "width:160px","height:224px","border-radius:12px","position:relative",
-    "box-sizing:border-box","overflow:hidden",
+  el.style.cssText = [
+    `width:${w}px`, `height:${h}px`, `border-radius:${Math.round(8 * zoom)}px`, "position:relative",
+    "box-sizing:border-box", "overflow:hidden", "display:flex", "justify-content:center", "align-items:center",
     `background-color:${bgColor}`,
-    `border:${edgeWidth}px solid ${backColors.outline || "#333"}`,
-    "box-shadow:0 0 10px rgba(0,0,0,0.7)",
+    `border:${Math.max(2, Math.round(2 * zoom))}px solid ${sc.outline || "#333"}`,
+    "box-shadow:0 0 10px rgba(0,0,0,0.7)", "font-family:Arial,sans-serif", "font-weight:bold",
   ].join(";");
-  const suitElem = document.createElement("div");
-  suitElem.className = "suit-symbol";
-  suitElem.textContent = suitData.find(s => s.key === selectedSuitKey)?.symbol || "?";
-  suitElem.style.cssText = `color:${suitColor};font-size:${suitSz}px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;user-select:none;`;
-  cardPreview.appendChild(suitElem);
   const rankElem = document.createElement("div");
   rankElem.className = "rank";
   rankElem.textContent = "A";
-  rankElem.style.cssText = `color:${suitColor};font-size:${rankSz * 0.55}px;position:absolute;top:6px;right:8px;line-height:1;white-space:nowrap;user-select:none;pointer-events:none;font-weight:bold;`;
-  cardPreview.appendChild(rankElem);
+  rankElem.style.cssText = `color:${suitColor};font-size:${Math.round(rankSz * factor * zoom)}px;position:absolute;top:6%;right:7%;line-height:1;white-space:nowrap;user-select:none;pointer-events:none;`;
+  el.appendChild(rankElem);
+  const suitElem = document.createElement("div");
+  suitElem.className = "suit-symbol";
+  suitElem.textContent = suitData.find(s => s.key === selectedSuitKey)?.symbol || "?";
+  suitElem.style.cssText = `color:${suitColor};font-size:${Math.round(suitSz * factor * zoom)}px;pointer-events:none;user-select:none;`;
+  el.appendChild(suitElem);
 }
+
+function updatePreview()      { _drawPreview(cardPreview,      160, 217, 160 / 112, 0.65); }
+function updateTablePreview() { _drawPreview(tablecardPreview,  75, 108,  75 / 45,  0.28); }
 
 function updateCardBackPreview() {
   const c = backColors;
@@ -369,37 +379,9 @@ function updateCardBackPreview() {
   cardBackPreview.style.border      = `${c.edgeWidth || 2}px solid ${c.outline}`;
   cardBackPreview.style.boxSizing   = "border-box";
   cardBackPreview.style.width       = "160px";
-  cardBackPreview.style.height      = "224px";
-  cardBackPreview.style.borderRadius = "12px";
+  cardBackPreview.style.height      = "217px";
+  cardBackPreview.style.borderRadius = "11px";
   cardBackPreview.style.boxShadow   = "0 0 10px rgba(0,0,0,0.6)";
-}
-
-function updateTablePreview() {
-  if (!selectedSuitKey) return;
-  tablecardPreview.innerHTML = "";
-  const suitColor = suitColors[selectedSuitKey]?.symbol || "white";
-  const bgColor   = suitColors[selectedSuitKey]?.background || "black";
-  const suitSz    = +suitSizeSlider.value;
-  const rankSz    = +rankSizeSlider.value;
-  const edgeWidth = backColors.edgeWidth || 2;
-  // Table cards are 45x65px in-game (ratio 1:1.44). Preview at ~1.67x = 75x105px.
-  tablecardPreview.style.cssText = [
-    "width:75px","height:105px","border-radius:8px","position:relative",
-    "box-sizing:border-box","overflow:hidden",
-    `background-color:${bgColor}`,
-    `border:${edgeWidth}px solid ${backColors.outline || "#333"}`,
-    "box-shadow:0 0 10px rgba(0,0,0,0.7)",
-  ].join(";");
-  const suitElem = document.createElement("div");
-  suitElem.className = "suit-symbol";
-  suitElem.textContent = suitData.find(s => s.key === selectedSuitKey)?.symbol || "?";
-  suitElem.style.cssText = `color:${suitColor};font-size:${suitSz * 0.35}px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;user-select:none;`;
-  tablecardPreview.appendChild(suitElem);
-  const rankElem = document.createElement("div");
-  rankElem.className = "rank";
-  rankElem.textContent = "A";
-  rankElem.style.cssText = `color:${suitColor};font-size:${rankSz * 0.28}px;position:absolute;top:4px;right:4px;line-height:1;white-space:nowrap;user-select:none;pointer-events:none;font-weight:bold;`;
-  tablecardPreview.appendChild(rankElem);
 }
 
 function updateTableCardBackPreview() {
@@ -408,12 +390,13 @@ function updateTableCardBackPreview() {
   tablecardBackPreview.style.border       = `${c.edgeWidth || 2}px solid ${c.outline}`;
   tablecardBackPreview.style.boxSizing    = "border-box";
   tablecardBackPreview.style.width        = "75px";
-  tablecardBackPreview.style.height       = "105px";
+  tablecardBackPreview.style.height       = "108px";
   tablecardBackPreview.style.borderRadius = "8px";
   tablecardBackPreview.style.boxShadow    = "0 0 10px rgba(0,0,0,0.6)";
 }
 
 document.getElementById("extraSuitChk").addEventListener("change", () => {
+  if (!isExtraSuitEnabled() && wildTypeBtn.textContent === 'Extra') { wildTypeBtn.textContent = 'Classic'; wtIndex = 0; updateSummary(); }
   buildSuitButtons();
   if (!isExtraSuitEnabled() && selectedSuitKey === "stars") selectedSuitKey = "hearts";
   updateColorButtonsState();
@@ -425,21 +408,31 @@ function initializeSuitColors() {
   suitData.forEach(({key}) => { if (!suitColors[key]) suitColors[key] = {symbol:"white",background:"black"}; });
 }
 
+// Settings storage.
+// Browsers (Chrome especially) silently refuse cookies for pages opened straight
+// from disk (file:// — e.g. double-clicking index.html), so every value is also
+// mirrored into localStorage, which does work there. Reads try the cookie first
+// and fall back to the mirror, so hosted (http/https) play behaves as before.
 function setCookie(name,value,days=365) {
-  const expires = new Date(Date.now()+days*24*60*60*1000).toUTCString();
-  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
+  try {
+    const expires = new Date(Date.now()+days*24*60*60*1000).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
+  } catch {}
+  try { localStorage.setItem('cookie:' + name, value); } catch {}
 }
 
 function getCookie(name) {
-  if (!document.cookie) return null;
-  for (const pair of document.cookie.split('; ')) {
-    const i = pair.indexOf('=');
-    if (i === -1) continue;
-    const k = pair.substring(0, i);
-    if (k !== name) continue;
-    try { return decodeURIComponent(pair.substring(i + 1)); }
-    catch { return pair.substring(i + 1); }
+  if (document.cookie) {
+    for (const pair of document.cookie.split('; ')) {
+      const i = pair.indexOf('=');
+      if (i === -1) continue;
+      const k = pair.substring(0, i);
+      if (k !== name) continue;
+      try { return decodeURIComponent(pair.substring(i + 1)); }
+      catch { return pair.substring(i + 1); }
+    }
   }
+  try { return localStorage.getItem('cookie:' + name); } catch {}
   return null;
 }
 
@@ -501,9 +494,9 @@ function loadSettingsFromCookies() {
         updateBuyClock();
       }
       if (cr.wildType) {
-        document.getElementById('wildTypeBtn').textContent = cr.wildType;
         wtIndex = wildTypes.indexOf(cr.wildType);
-        if (wtIndex === -1) wtIndex = 0;
+        if (wtIndex === -1 || !allowedWildTypes().includes(cr.wildType)) wtIndex = 0;
+        document.getElementById('wildTypeBtn').textContent = wildTypes[wtIndex];
       }
       if (cr.wildSwap) {
         document.getElementById('wildSwapBtn').textContent = cr.wildSwap;
@@ -606,21 +599,19 @@ document.querySelector('.start-btn').addEventListener('click', () => {
     }
   });
 
-  const playerNames = [humanName, ...compNames];
+  // Debug mode: nobody human. Only the computer players take part (they need at least 3).
+  const playerNames = debugAI ? [...compNames] : [humanName, ...compNames];
   if (playerNames.length < 3) {
-    alert('Please have at least 3 players to start the game.');
+    alert(debugAI ? 'Debug mode has no human player, so it needs at least 3 computer players.'
+                  : 'Please have at least 3 players to start the game.');
     return;
   }
 
-  // Debug mode: treat player 0 (human) as an AI using the first computer's
-  // difficulty, so all players run autonomously and can be observed via the Game Log.
-  const humanIsAI   = debugAI;
-  const humanDiff   = debugAI ? (compDifficulties[0] || 'Medium') : null;
-
   localStorage.setItem('gameSetup', JSON.stringify({
     playerNames,
-    isAI:        [humanIsAI, ...compNames.map(() => true)],
-    difficulties: [humanDiff, ...compDifficulties]
+    isAI:        debugAI ? compNames.map(() => true) : [false, ...compNames.map(() => true)],
+    difficulties: debugAI ? [...compDifficulties] : [null, ...compDifficulties],
+    debug:       debugAI
   }));
 
   window.location.href = 'table.html';

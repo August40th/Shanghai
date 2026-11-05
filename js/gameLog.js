@@ -58,9 +58,9 @@
   function _build() {
     if (panel) return;
 
-    // Default position: bottom-left corner.
-    panelX = 12;
-    panelY = window.innerHeight - panelH - 12;
+    // Default position: top-left corner (drag it anywhere; it stays where you put it).
+    panelX = 8;
+    panelY = 8;
 
     panel = document.createElement('div');
     panel.id = 'game-log-panel';
@@ -224,6 +224,7 @@
 
     document.addEventListener('mousemove', e => {
       if (dragging) {
+        if (!_userMoved) { _userMoved = true; setTimeout(() => window.dispatchEvent(new Event('resize')), 0); }
         panelX = Math.max(0, Math.min(window.innerWidth  - panelW, e.clientX - dragOffX));
         panelY = Math.max(0, Math.min(window.innerHeight - 40,     e.clientY - dragOffY));
         panel.style.left = `${panelX}px`;
@@ -253,11 +254,32 @@
   }
 
   let _minimised = false;
+  let _userMoved = false;   // once the player drags the log, stop auto-docking it
+  let _dock      = null;    // { x, y } free spot on the table supplied by roundManager
+
+  // Called by roundManager.layoutPlayers() with a spot guaranteed to be clear
+  // of player seats and piles (or null when there isn't one).
+  function dock(x, y) {
+    _dock = (x == null) ? null : { x, y };
+    if (panel && _minimised) _anchorBottom();
+  }
+
   function _toggleMinimise() {
     _minimised = !_minimised;
     logBody.style.display = _minimised ? 'none' : 'flex';
     panel.style.height     = _minimised ? 'auto' : `${panelH}px`;
+    panel.style.minHeight  = _minimised ? '0' : '160px';   // CSS min-height would keep it tall when collapsed
     panel.querySelector('button[title="Minimise"]').textContent = _minimised ? '+' : '−';
+    _anchorBottom();
+  }
+
+  // Until the player drags it, the panel sits in the top-left corner.
+  function _anchorBottom() {
+    if (!panel || _userMoved) return;
+    panelX = 8;
+    panelY = 8;
+    panel.style.left = `${panelX}px`;
+    panel.style.top  = `${panelY}px`;
   }
 
   // ─── Render one entry row ─────────────────────────────────────────────────
@@ -313,8 +335,13 @@
   }
 
   // ─── Public: log an entry ────────────────────────────────────────────────
+  // Two logs in one: the REGULAR game log only carries public table events (cards laid
+  // down, discards, cards taken or bought from the discard pile, round markers) - entries
+  // flagged `pub: true`. Debug mode (computers only) keeps everything, including the dealt
+  // hands, staging and the AI's reasons.
   function log(entry) {
-    // entry = { cat, html }
+    // entry = { cat, html, pub? }
+    if (!window.gameDebug && !entry.pub) return;
     if (!panel) _build();
     const now  = new Date();
     const time = `${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
@@ -331,11 +358,19 @@
       const atBottom = logBody.scrollHeight - logBody.scrollTop - logBody.clientHeight < 60;
       if (atBottom) logBody.scrollTop = logBody.scrollHeight;
     }
+    _notify();
   }
 
   function clear() {
     entries = [];
     if (logBody) logBody.innerHTML = '';
+    _notify();
+  }
+
+  // The table shows the latest public entries (see roundManager's #recent-log).
+  const _notify = () => { try { window.dispatchEvent(new Event('gamelog-changed')); } catch {} };
+  function getRecent(n = 2) {
+    return entries.filter(e => e.pub).slice(-n);
   }
 
   function show() {
@@ -357,22 +392,22 @@
       log({ cat: CAT.DRAW,
             html: `${fmtName(playerName)} drew from the deck.` });
     } else {
-      log({ cat: CAT.DRAW,
+      log({ cat: CAT.DRAW, pub: true,
             html: `${fmtName(playerName)} drew ${fmt(card)} from the discard pile.` });
     }
   }
 
   function logDiscard(playerName, card) {
-    log({ cat: CAT.DISCARD,
+    log({ cat: CAT.DISCARD, pub: true,
           html: `${fmtName(playerName)} discarded ${fmt(card)}.` });
   }
 
   function logBuy(playerName, card, isVeto) {
     if (isVeto) {
-      log({ cat: CAT.BUY,
+      log({ cat: CAT.BUY, pub: true,
             html: `${fmtName(playerName)} took ${fmt(card)} as their draw (veto).` });
     } else {
-      log({ cat: CAT.BUY,
+      log({ cat: CAT.BUY, pub: true,
             html: `${fmtName(playerName)} bought ${fmt(card)} (+1 draw from deck).` });
     }
   }
@@ -386,18 +421,39 @@
     const parts = subAreas.map(({ label, cards }) =>
       `${label}: ${fmtCards(cards)}`
     ).join(' | ');
-    log({ cat: CAT.LAYDOWN,
+    log({ cat: CAT.LAYDOWN, pub: true,
           html: `${fmtName(playerName)} laid down — ${parts}` });
   }
 
-  function logPlay(playerName, card, ownerName, areaLabel) {
-    log({ cat: CAT.PLAY,
-          html: `${fmtName(playerName)} played ${fmt(card)} onto ${fmtName(ownerName)}'s ${areaLabel}.` });
+  // "Rob played 10♥ onto Victor's set of 10s." The group is described from the table.
+  const RANK_PLURAL = { A: 'Aces', K: 'Kings', Q: 'Queens', J: 'Jacks' };
+  function _describeGroup(ownerName, areaIdx, areaLabel) {
+    const isSet = /set/i.test(areaLabel || '');
+    try {
+      const wild = window.validator.isWild;
+      const cards = (window.gameState.getState().subcontractCards[ownerName] || [])
+        .filter(c => c.subArea === areaIdx);
+      const nat = cards.find(c => !wild(c));
+      if (isSet) return nat ? `set of ${RANK_PLURAL[nat.rank] || nat.rank + 's'}` : 'set';
+      return nat ? `run of ${nat.suit}` : 'run';
+    } catch { return areaLabel || (isSet ? 'set' : 'run'); }
+  }
+
+  function logPlay(playerName, card, ownerName, areaLabel, areaIdx) {
+    const group = areaIdx === undefined ? (areaLabel || 'contract') : _describeGroup(ownerName, areaIdx, areaLabel);
+    const whose = ownerName === playerName ? 'their own' : `${fmtName(ownerName)}'s`;
+    log({ cat: CAT.PLAY, pub: true,
+          html: `${fmtName(playerName)} played ${fmt(card)} onto ${whose} ${group}.` });
   }
 
   function logWildSwap(playerName, realCard, wildCard, ownerName, areaLabel) {
     log({ cat: CAT.SWAP,
           html: `${fmtName(playerName)} swapped ${fmt(realCard)} for wild ${fmt(wildCard)} in ${fmtName(ownerName)}'s ${areaLabel}.` });
+  }
+
+  function logWildSwapUndo(playerName, count, reason) {
+    log({ cat: CAT.SWAP,
+          html: `${fmtName(playerName)}'s ${count} wild swap${count === 1 ? '' : 's'} ${count === 1 ? 'was' : 'were'} undone${reason ? ' (' + reason + ')' : ''}.` });
   }
 
   function logStage(playerName, stagedByArea) {
@@ -418,7 +474,7 @@
   }
 
   function logRound(roundNum, contractLabel) {
-    log({ cat: CAT.ROUND,
+    log({ cat: CAT.ROUND, pub: true,
           html: `<strong style="color:#f39c12">── Round ${roundNum}: ${contractLabel} ──</strong>` });
   }
 
@@ -428,6 +484,9 @@
     clear,
     show,
     hide,
+    dock,
+    isHome: () => !_userMoved,
+    getRecent,
     logDraw,
     logDiscard,
     logBuy,
@@ -435,6 +494,7 @@
     logLayDown,
     logPlay,
     logWildSwap,
+    logWildSwapUndo,
     logStage,
     logReason,
     logRound,
@@ -443,9 +503,12 @@
   };
 
   // Build on load.
+  // The log starts collapsed (header only) so it never covers player seats;
+  // click "+" on its header to open it.
+  function _buildCollapsed() { _build(); if (!_minimised) _toggleMinimise(); }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _build);
+    document.addEventListener('DOMContentLoaded', _buildCollapsed);
   } else {
-    _build();
+    _buildCollapsed();
   }
 })();

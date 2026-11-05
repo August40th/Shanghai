@@ -26,7 +26,11 @@
     if (old) old.remove();
     const ph = document.createElement('div');
     ph.className = 'placeholder';
-    ph.style.cssText = `position:relative;width:${window.gameState.CARD_WIDTH}px;height:${window.gameState.CARD_HEIGHT}px;margin-left:-${Math.floor(window.gameState.CARD_WIDTH / 2)}px;border:2px dashed #aaa;box-sizing:border-box;`;
+    // Match the size of the cards already in this row (your hand uses larger cards).
+    const ref = container.querySelector('.card');
+    const phW = ref ? ref.offsetWidth  : window.gameState.CARD_WIDTH;
+    const phH = ref ? ref.offsetHeight : window.gameState.CARD_HEIGHT;
+    ph.style.cssText = `position:relative;width:${phW}px;height:${phH}px;margin-left:-${Math.floor(phW / 2)}px;border:2px dashed #aaa;box-sizing:border-box;`;
     const idx   = _getInsertIndex(container, clientX);
     const cards = container.querySelectorAll('.card');
     if (idx >= cards.length) container.appendChild(ph);
@@ -43,168 +47,176 @@
     return cards.length;
   }
 
-  // ─── Wild swap helpers ────────────────────────────────────────────────────
+  // ─── Wild swap ────────────────────────────────────────────────────────────
+  // Rules (from the game's owner):
+  //  • A swap = drop a natural card ONTO a specific wild in a laid-down group; the
+  //    wild goes to the swapper's hand. Any number of swaps per turn.
+  //  • Sets: any card of the set's rank. Runs: only the card the wild stands for
+  //    (it takes the wild's own slot - order matters). All-wild groups: the first
+  //    natural fixes the rank / suit. (validator.canSwapWild does the matching.)
+  //  • Wild Swap "Pre": only players who have NOT laid down may swap.
+  //    "Post": everybody may. (validator.swapPolicy)
+  //  • A swap made before the player has laid down obliges them to lay down that
+  //    turn; otherwise every swap is undone: the Undo Swap button, or automatically
+  //    when they discard without having laid down. Laying down makes them permanent.
+  const _wildSwaps = new Map(); // playerName → [undo record]
 
-  const _wildSwaps = new Map(); // playerName → [{subArea, globalWildIdx, wildCard, swapCard}]
+  function _hasPending(playerName) { return (_wildSwaps.get(playerName) || []).length > 0; }
 
-  function _getWildSwapSetting() {
-    // window.gameRules is set by roundManager.initTable and is always available
-    // on the table page. Fall back to cookie parse only as a safety net.
-    if (window.gameRules?.wildSwap !== undefined) {
-      return String(window.gameRules.wildSwap).toLowerCase();
-    }
-    try {
-      const row = document.cookie.split('; ').find(r => r.startsWith('customRules='));
-      if (!row) return 'off';
-      const cr = JSON.parse(decodeURIComponent(row.split('=').slice(1).join('=')));
-      return (cr.wildSwap || 'off').toLowerCase();
-    } catch { return 'off'; }
-  }
-
-  // myPlayer  = active player (whose hand card is played)
-  // areaOwner = player who owns the subcontract area (may differ on cross-player plays)
-  function _tryWildSwap(data, subAreaCards, subAreaIdx, sub, myPlayer, areaOwner) {
-    const { isWild } = window.validator;
-
-    // The dropped card must not itself be a wild.
-    if (isWild(data.card)) return false;
-
-    const wildIndices = subAreaCards
-      .map((c, i) => (isWild(c) ? i : -1))
-      .filter(i => i !== -1);
-    if (!wildIndices.length) return false;
-
-    const label = (sub.dataset.label || '').toLowerCase();
-    const state = getState();
-    const flatSubs = [...(state.subcontractCards[areaOwner] || [])];
-
-    // Try substituting the dropped card for each wild in the area.
-    // Rather than substituting by position index (which fails when the real
-    // card belongs at a different position than the wild), we:
-    //   1. Remove one wild from the area
-    //   2. Insert the real card at the correct sorted position
-    //   3. Validate the result
-    for (const wildIdx of wildIndices) {
-      // Build candidate: area without this wild, plus the real card.
-      const withoutWild = subAreaCards.filter((_, i) => i !== wildIdx);
-      const RVAL = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                     '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
-
-      let candidate;
-      if (label.includes('set')) {
-        // Sets are order-independent — just append.
-        candidate = [...withoutWild, data.card];
-      } else {
-        // For runs, insert the real card at the correct rank position.
-        const cardVal = RVAL[data.card.rank] || 0;
-        const insertAt = withoutWild.findIndex(c => {
-          if (isWild(c)) return false;
-          return (RVAL[c.rank] || 0) > cardVal;
-        });
-        if (insertAt === -1) {
-          candidate = [...withoutWild, data.card];
-        } else {
-          candidate = [...withoutWild.slice(0, insertAt), data.card, ...withoutWild.slice(insertAt)];
-        }
-      }
-
-      const valid =
-        (label.includes('set') && window.validator.isValidSet(candidate)) ||
-        (label.includes('run') && window.validator.isValidRun(candidate));
-      if (!valid) continue;
-
-      // Find the global index of this wild in flatSubs.
-      let countInArea = -1, globalWildIdx = -1;
-      for (let i = 0; i < flatSubs.length; i++) {
-        if (flatSubs[i].subArea === subAreaIdx) countInArea++;
-        if (countInArea === wildIdx) { globalWildIdx = i; break; }
-      }
-      if (globalWildIdx === -1) return false;
-
-      const wildCard = flatSubs[globalWildIdx];
-
-      // Build new flat area: remove the wild, insert real card at correct position.
-      const newSubs = { ...state.subcontractCards };
-      const newFlat = [...flatSubs];
-      // Remove the wild.
-      newFlat.splice(globalWildIdx, 1);
-
-      // Find correct global insertion point for the real card by rank value.
-      const RVAL2 = RVAL;
-      const cardVal = RVAL2[data.card.rank] || 0;
-      let insertGlobal = newFlat.findLastIndex(c => c.subArea === subAreaIdx &&
-        !isWild(c) && (RVAL2[c.rank] || 0) <= cardVal);
-      if (insertGlobal === -1) {
-        // Insert before all current area cards.
-        const firstInArea = newFlat.findIndex(c => c.subArea === subAreaIdx);
-        insertGlobal = firstInArea === -1 ? newFlat.length : firstInArea;
-      } else {
-        insertGlobal += 1; // Insert after the found card.
-      }
-      newFlat.splice(insertGlobal, 0, { ...data.card, subArea: subAreaIdx });
-      newSubs[areaOwner] = newFlat;
-
-      // Update active player's hand: remove the played card, add the wild.
-      const newHands = { ...state.hands };
-      const newHand  = [...(state.hands[myPlayer] || [])];
-      const playedIdx = newHand.findIndex(c => c._id === data.card._id);
-      if (playedIdx !== -1) newHand.splice(playedIdx, 1);
-
-      // Also remove from subcontract if it came from there (pre-laydown).
-      const mySubs = [...(newSubs[myPlayer] || [])];
-      const subIdx = mySubs.findIndex(c => c._id === data.card._id);
-      if (subIdx !== -1) mySubs.splice(subIdx, 1);
-      newSubs[myPlayer] = mySubs;
-
-      newHand.push(wildCard);
-      newHands[myPlayer] = newHand;
-
-      setState({ hands: newHands, subcontractCards: newSubs });
-
-      const swaps = _wildSwaps.get(myPlayer) || [];
-      swaps.push({ subArea: subAreaIdx, globalWildIdx, wildCard, swapCard: data.card, areaOwner });
-      _wildSwaps.set(myPlayer, swaps);
-
-      return true;
-    }
-    return false;
-  }
-
-  function _cancelWildSwaps() {
-    const { currentTurnIdx, players, laidDownPlayers } = getState();
-    if (currentTurnIdx === -1) return;
-    const myPlayer = players[currentTurnIdx];
-    const swaps    = _wildSwaps.get(myPlayer);
-    if (!swaps || !swaps.length) return;
-    if (laidDownPlayers.has(currentTurnIdx)) return;
-
-    const state    = getState();
-    const newSubs  = { ...state.subcontractCards };
-    const newHands = { ...state.hands };
-    const newHand  = [...(state.hands[myPlayer] || [])];
-
-    swaps.forEach(({ subArea, globalWildIdx, wildCard, swapCard, areaOwner }) => {
-      // Restore the wild card into the owner's subcontract area.
-      const ownerFlat = [...(newSubs[areaOwner] || [])];
-      ownerFlat[globalWildIdx] = wildCard;
-      newSubs[areaOwner] = ownerFlat;
-      // Return the swapped card back to the active player's hand.
-      const swapCardIdx = newHand.findIndex(c => c._id === swapCard._id);
-      if (swapCardIdx !== -1) newHand.splice(swapCardIdx, 1);
-      newHand.push(swapCard);
+  // Show the Undo Swap button only for the player whose swaps are pending.
+  function _syncUndoButton() {
+    const { players, currentTurnIdx } = getState();
+    document.querySelectorAll('.swap-undo-btn').forEach(btn => {
+      const idx = Number((btn.closest('.player')?.id || '').split('-')[1]);
+      btn.hidden = !(idx === currentTurnIdx && _hasPending(players[idx]));
     });
-
-    newHands[myPlayer] = newHand;
-    setState({ hands: newHands, subcontractCards: newSubs });
-    _wildSwaps.delete(myPlayer);
-
-    _reRender();
   }
 
-  function _confirmWildSwaps() {
-    const { currentTurnIdx, players } = getState();
-    if (currentTurnIdx === -1) return;
-    _wildSwaps.delete(players[currentTurnIdx]);
+  // Perform a swap for player myIdx: `card` (hand or own staged cards) replaces
+  // target.wild. target = { playerIdx, areaIdx, wildIdx }. Returns true on success.
+  // Used by the human drop handler and by the AI.
+  function performWildSwap(myIdx, card, target) {
+    const { isWild, canSwapWild, swapPolicy } = window.validator;
+    const state = getState();
+    if (!swapPolicy(myIdx)) return false;
+    const me    = state.players[myIdx];
+    const owner = state.players[target.playerIdx];
+    if (!state.laidDownPlayers.has(target.playerIdx)) return false;
+    const labels   = (window.gameState.CONTRACT_SUB_AREAS || {})[state.roundIndex] || [];
+    const ownerFlat = [...(state.subcontractCards[owner] || [])];
+    const areaCards = ownerFlat.filter(c => c.subArea === target.areaIdx);
+    const wild = areaCards[target.wildIdx];
+    if (!wild || !isWild(wild)) return false;
+
+    // Locate the real card: hand first, then (before lay-down) own staged cards.
+    const hand = [...(state.hands[me] || [])];
+    let real, fromSub = null;
+    const hi = hand.findIndex(c => c._id === card._id);
+    if (hi !== -1) real = hand[hi];
+    const hasLaid = state.laidDownPlayers.has(myIdx);
+    const myFlat0 = me === owner ? ownerFlat : [...(state.subcontractCards[me] || [])];
+    if (!real && !hasLaid) {
+      const si = myFlat0.findIndex(c => c._id === card._id);
+      if (si !== -1) { real = myFlat0[si]; fromSub = { idx: si, subArea: real.subArea }; }
+    }
+    if (!real) return false;
+    if (!canSwapWild(areaCards, labels[target.areaIdx], real, target.wildIdx)) return false;
+
+    // Take the real card out of where it was.
+    const subs = { ...state.subcontractCards };
+    let myFlat = me === owner ? ownerFlat : myFlat0;
+    if (fromSub) myFlat.splice(fromSub.idx, 1); else hand.splice(hi, 1);
+    // Put it into the wild's own slot (in place - order matters).
+    const gi = ownerFlat.findIndex(c => c._id === wild._id);
+    if (gi === -1) return false;
+    const placed = { ...real, subArea: target.areaIdx };
+    ownerFlat[gi] = placed;
+    subs[owner] = ownerFlat;
+    if (me !== owner) subs[me] = myFlat;
+    // The wild goes to the swapper's hand.
+    const wildToHand = { ...wild }; delete wildToHand.subArea;
+    hand.push(wildToHand);
+    setState({ hands: { ...state.hands, [me]: hand }, subcontractCards: subs });
+
+    // Before lay-down the swap is provisional: remember how to undo it.
+    if (!hasLaid) {
+      const recs = _wildSwaps.get(me) || [];
+      recs.push({ owner, areaIdx: target.areaIdx, wildId: wild._id, realId: real._id, fromSub });
+      _wildSwaps.set(me, recs);
+    }
+    window.gameLog?.logWildSwap?.(me, real, wild, owner, labels[target.areaIdx] || `Area ${target.areaIdx}`);
+    _syncUndoButton();
+    return true;
+  }
+
+  // Undo every provisional swap the player made this turn (exactly, in reverse order).
+  function _cancelWildSwaps(myIdx, reason) {
+    const state = getState();
+    if (myIdx === undefined || myIdx === null) myIdx = state.currentTurnIdx;
+    if (myIdx < 0) return false;
+    const me   = state.players[myIdx];
+    const recs = _wildSwaps.get(me);
+    if (!recs || !recs.length) return false;
+    if (state.laidDownPlayers.has(myIdx)) { _wildSwaps.delete(me); _syncUndoButton(); return false; }
+
+    const subs = { ...state.subcontractCards };
+    const hand = [...(state.hands[me] || [])];
+    const myFlat = [...(subs[me] || [])];
+    let undone = 0;
+    for (const r of [...recs].reverse()) {
+      // The wild is still in the hand, or the player staged it.
+      let wild;
+      const wi = hand.findIndex(c => c._id === r.wildId);
+      if (wi !== -1) wild = hand.splice(wi, 1)[0];
+      else {
+        const si = myFlat.findIndex(c => c._id === r.wildId);
+        if (si !== -1) wild = myFlat.splice(si, 1)[0];
+      }
+      const ownerFlat = [...(subs[r.owner] || [])];
+      const gi = ownerFlat.findIndex(c => c._id === r.realId);
+      if (!wild || gi === -1) {
+        console.warn('wild swap undo: could not restore one swap', r);
+        if (wild) hand.push(wild);
+        continue;
+      }
+      const real = { ...ownerFlat[gi] };
+      ownerFlat[gi] = { ...wild, subArea: r.areaIdx };
+      subs[r.owner] = ownerFlat;
+      delete real.subArea;
+      if (r.fromSub) myFlat.splice(Math.min(r.fromSub.idx, myFlat.length), 0, { ...real, subArea: r.fromSub.subArea });
+      else hand.push(real);
+      undone++;
+    }
+    subs[me] = myFlat;
+    setState({ hands: { ...state.hands, [me]: hand }, subcontractCards: subs });
+    _wildSwaps.delete(me);
+    window.gameLog?.logWildSwapUndo?.(me, undone, reason);
+    _syncUndoButton();
+    _reRender();
+    window.validateLayDown?.(myIdx);
+    window.scoring?.updatePlayerStats?.(getState().hands);
+    return true;
+  }
+
+  // Swaps become permanent (the player laid down).
+  function _confirmWildSwaps(myIdx) {
+    const { players, currentTurnIdx } = getState();
+    if (myIdx === undefined || myIdx === null) myIdx = currentTurnIdx;
+    if (myIdx < 0) return;
+    _wildSwaps.delete(players[myIdx]);
+    _syncUndoButton();
+  }
+
+  window.addEventListener('playerLaidDown', ev => _confirmWildSwaps(ev.detail?.playerIndex));
+
+  // Highlight the wild under the pointer when the dragged card may replace it.
+  let _dragCardId = null, _swapMarked = null;
+  function _clearSwapMark() {
+    if (_swapMarked) { _swapMarked.classList.remove('swap-target'); _swapMarked = null; }
+  }
+  document.addEventListener('dragstart', e => {
+    const id = e.target?.dataset?.cardId;
+    _dragCardId = id === undefined ? null : id;
+  }, true);
+  document.addEventListener('dragend', () => { _dragCardId = null; _clearSwapMark(); }, true);
+
+  function _markSwapTarget(e, myIdx, ownerIdx, areaIdx, sub) {
+    const el = e.target?.closest ? e.target.closest('.card') : null;
+    if (el === _swapMarked) return;
+    _clearSwapMark();
+    if (!el || !sub.contains(el) || _dragCardId === null) return;
+    const st = getState();
+    const me = st.players[myIdx], owner = st.players[ownerIdx];
+    const dragged = [...(st.hands[me] || []), ...(st.subcontractCards[me] || [])]
+      .find(c => String(c._id) === String(_dragCardId));
+    const labels = (window.gameState.CONTRACT_SUB_AREAS || {})[st.roundIndex] || [];
+    const areaCards = (st.subcontractCards[owner] || []).filter(c => c.subArea === areaIdx);
+    const wi = areaCards.findIndex(c => String(c._id) === String(el.dataset.cardId));
+    if (dragged && wi !== -1 && window.validator.swapPolicy(myIdx) &&
+        window.validator.canSwapWild(areaCards, labels[areaIdx], dragged, wi)) {
+      el.classList.add('swap-target');
+      _swapMarked = el;
+    }
   }
 
   // ─── Shared re-render helper ──────────────────────────────────────────────
@@ -249,7 +261,14 @@
     _wireLaidDownContractDrops(currentTurnIdx);
     _wireDiscardDrop(currentTurnIdx, discardPileDiv);
     _wireDiscardClick(currentTurnIdx, discardPileDiv);
+    // The human may arrange their hand and stage cards while somebody else is playing.
+    const v = window.roundManager?.viewerIdx?.();
+    if (v !== undefined && v >= 0 && v !== currentTurnIdx && !window.aiData?.isAI?.[v]) {
+      _wireHandDrop(v);
+      _wireOwnSubcontractDrop(v);
+    }
     window.cardRenderer.updateDiscardPlayableIndicator();
+    _syncUndoButton();
   }
 
   // ─── Hand drop target ─────────────────────────────────────────────────────
@@ -399,17 +418,13 @@
   // ─── Laid-down contract drop targets (post-laydown plays) ─────────────────
   // Any player's laid-down area accepts cards from the active player's hand,
   // provided the play is valid (extends the set/run or wild-swaps).
-  // Wild swap 'pre': player may swap even before laying down themselves.
-  // Wild swap 'post': player must have laid down first.
-  // Normal play: player must have laid down first.
+  // Normal play needs a lay-down first. Wild swaps follow the Wild Swap setting
+  // (see "Wild swap" above): drop the card onto the wild it replaces.
 
   function _wireLaidDownContractDrops(myTurnIdx) {
     const state          = getState();
     const myPlayer       = state.players[myTurnIdx];
     const myHandDiv      = document.getElementById(`hand-${myTurnIdx}`);
-    const wildSwapSetting = _getWildSwapSetting();
-    const preSwap        = wildSwapSetting === 'pre';
-    const postSwap       = wildSwapSetting === 'post';
 
     state.players.forEach((owner, playerIdx) => {
       if (!state.laidDownPlayers.has(playerIdx)) return;
@@ -419,17 +434,19 @@
         sub.ondragover = e => {
           const st      = getState();
           const hasLaid = st.laidDownPlayers.has(myTurnIdx);
-          // Allow dragover if: player has laid down (normal play + post-swap),
-          // OR wild swap is 'pre' and player hasn't laid down yet.
-          if (!hasLaid && !preSwap) return;
+          // Allowed if the player has laid down (normal play, plus swaps under Post),
+          // or the setting lets them swap before laying down (Pre and Post).
+          if (!hasLaid && !window.validator.swapPolicy(myTurnIdx)) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = 'move';
           sub.classList.add('drop-target');
+          _markSwapTarget(e, myTurnIdx, playerIdx, subAreaIdx, sub);
         };
-        sub.ondragleave = () => sub.classList.remove('drop-target');
+        sub.ondragleave = () => { sub.classList.remove('drop-target'); _clearSwapMark(); };
         sub.ondrop = e => {
           e.preventDefault();
           sub.classList.remove('drop-target');
+          _clearSwapMark();
 
           // ── Live state reads ─────────────────────────────────────────
           const st      = getState();
@@ -446,22 +463,21 @@
           const fromHand       = data.from === 'hand';
           const fromSubcontract = data.from === 'subcontract';
           if (!data.card || data.playerIndex !== myTurnIdx) return;
-          if (!fromHand && !(fromSubcontract && preSwap && !hasLaid)) return;
+          // Before laying down the card may also come from the player's own staged cards (swap only).
+          if (!fromHand && !(fromSubcontract && !hasLaid)) return;
 
           const flatOwner    = [...(st.subcontractCards[owner] || [])];
           const subAreaCards = flatOwner.filter(c => c.subArea === subAreaIdx);
           const label        = (sub.dataset.label || '').toLowerCase();
 
-          // ── Wild swap ────────────────────────────────────────────────
-          // 'pre': allowed before lay-down (swap only, no normal play).
-          // 'post': allowed after lay-down (swap + normal play).
-          const allowWildSwap = postSwap || (preSwap && !hasLaid);
-
-          if (allowWildSwap) {
-            if (_tryWildSwap(data, subAreaCards, subAreaIdx, sub, myPlayer, owner)) {
-              window.gameLog?.logWildSwap(myPlayer, data.card,
-                subAreaCards.find(c => window.validator.isWild(c)),
-                owner, sub.dataset.label || `Area ${subAreaIdx}`);
+          // ── Wild swap: drop ONTO the wild itself ─────────────────────
+          const wildEl   = e.target?.closest ? e.target.closest('.card') : null;
+          const wildKey  = wildEl && sub.contains(wildEl) ? wildEl.dataset.cardId : undefined;
+          const wildIdx  = wildKey === undefined ? -1
+            : subAreaCards.findIndex(c => String(c._id) === String(wildKey));
+          if (wildIdx !== -1 && window.validator.isWild(subAreaCards[wildIdx]) &&
+              window.validator.swapPolicy(myTurnIdx)) {
+            if (performWildSwap(myTurnIdx, data.card, { playerIdx, areaIdx: subAreaIdx, wildIdx })) {
               _reRender();
               window.validateLayDown(myTurnIdx);
               window.scoring.updatePlayerStats(getState().hands);
@@ -471,7 +487,7 @@
 
           // ── Normal play (requires lay-down first) ────────────────────
           if (!hasLaid) {
-            // Pre-swap attempt failed — nothing else allowed pre-laydown.
+            // Not a valid swap (drop the card onto the wild it may replace) — nothing else is allowed before lay-down.
             sub.style.outline = '2px solid red';
             setTimeout(() => { sub.style.outline = ''; }, 800);
             return;
@@ -509,7 +525,7 @@
           setState({ hands: newHands, subcontractCards: newSubs });
 
           // Log the play.
-          window.gameLog?.logPlay(myPlayer, data.card, owner, sub.dataset.label || `Area ${subAreaIdx}`);
+          window.gameLog?.logPlay(myPlayer, data.card, owner, sub.dataset.label || `Area ${subAreaIdx}`, subAreaIdx);
 
           const remaining = getState().hands[myPlayer].length;
           if (myHandDiv) {
@@ -547,13 +563,20 @@
       discardPileDiv.classList.remove('drop-target');
 
       // ── Live state reads ─────────────────────────────────────────────
-      const state    = getState();
+      let state    = getState();
       if (!state.hasDrawn) return;
 
       const raw = e.dataTransfer.getData('text/plain');
       if (!raw) return;
       const data = JSON.parse(raw);
       if (!data.card || data.playerIndex !== myTurnIdx) return;
+
+      // Swapped before laying down but about to discard without laying down
+      // (e.g. to keep the swapped wild): every swap is undone first.
+      if (!state.laidDownPlayers.has(myTurnIdx) && _hasPending(state.players[myTurnIdx])) {
+        _cancelWildSwaps(myTurnIdx, 'discarded without laying down');
+        state = getState();
+      }
 
       const myPlayer = state.players[myTurnIdx];
       const newHands = { ...state.hands };
@@ -588,9 +611,10 @@
 
       // Push to discard pile.
       const newDiscard = [...state.discardPile, card];
+      window.aiInfo?.recordDiscard(myTurnIdx, card);
       setState({ hands: newHands, subcontractCards: newSubs, discardPile: newDiscard });
 
-      _confirmWildSwaps();
+      _confirmWildSwaps(myTurnIdx);
 
       // Re-render.
       if (myHandDiv) {
@@ -630,8 +654,10 @@
   function _wireDiscardClick(myTurnIdx, discardPileDiv) {
     if (!discardPileDiv) return;
 
+    discardPileDiv.style.cursor = window.aiData?.isAI?.[myTurnIdx] ? 'default' : '';
     discardPileDiv.onclick = e => {
       if (e.defaultPrevented) return;
+      if (window.aiData?.isAI?.[myTurnIdx]) return;   // only on a human's own turn
       const state    = getState();
       const hasLaid  = state.laidDownPlayers.has(myTurnIdx);
       const { discardPile, hasDrawn } = state;
@@ -667,6 +693,10 @@
   // to a human discard (buy clock, round-end detection, hard window clearing).
 
   function aiDiscard(card, playerIdx) {
+    // Safety net: an AI never ends a turn holding provisional swaps.
+    if (!getState().laidDownPlayers.has(playerIdx) && _hasPending(getState().players[playerIdx])) {
+      _cancelWildSwaps(playerIdx, 'discarded without laying down');
+    }
     const state    = getState();
     const myPlayer = state.players[playerIdx];
     const newHands = { ...state.hands };
@@ -685,6 +715,7 @@
     window.gameLog?.logDiscard(myPlayer, discarded);   // was: logDiscard(player, ...) — ReferenceError
 
     const newDiscard = [...state.discardPile, discarded];
+    window.aiInfo?.recordDiscard(playerIdx, discarded);
     setState({ hands: newHands, discardPile: newDiscard });
 
     window.cardRenderer.renderCardArray(hand, document.getElementById(`hand-${playerIdx}`), false, playerIdx, 'hand');
@@ -735,6 +766,8 @@
     setupDragDrop,
     cancelWildSwaps: _cancelWildSwaps,
     confirmWildSwaps: _confirmWildSwaps,
+    performWildSwap,
+    hasPendingSwaps: (idx) => _hasPending(getState().players[idx]),
     aiDiscard,
   };
 

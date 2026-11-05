@@ -66,7 +66,7 @@
         </div>
         <div class="rule-item" style="gap:14px">
           <button id="wildSwapBtn" class="wild-swap-btn">Off</button>
-          <div class="rule-label" data-tooltip="Players can swap a played wild card with the card it represents">Wild Swap</div>
+          <div class="rule-label" data-tooltip="Drop a card onto a wild in a laid-down group to take the wild. Sets: any card of the rank. Runs: only the card the wild stands for. Pre: only before you lay down. Post: before or after. A swap before laying down means you must lay down that turn, or it is undone.">Wild Swap</div>
         </div>
       </div>
       <div class="rule-column">
@@ -93,7 +93,7 @@
         </div>
         <div style="margin-top:8px">
           <div class="clock-label" data-tooltip="Time available after a discard to declare a buy">Buying Clock (seconds)</div>
-          <input id="buyClockRange" type="range" min="5" max="40" value="16">
+          <input id="buyClockRange" type="range" min="5" max="20" value="16">
           <div id="buyClockValue" style="min-width:30px;text-align:right">16</div>
         </div>
       </div>
@@ -135,11 +135,11 @@
         <input type="text" id="humanNameInput" value="Player1" style="width:60%;padding:6px;border-radius:6px;border:0;background:rgba(0,0,0,0.12);color:#fff">
       </label>
       <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
-        <label class="compact-switch" title="Debug mode: human player is replaced by an AI so all players are AI — use the Game Log to observe">
+        <label class="compact-switch" title="Debug mode: no human player. Only the computer players are in the game, every card is visible, and there is no seat for you — use the Game Log to observe (needs at least 3 computers)">
           <input type="checkbox" id="debugAiChk">
           <span class="compact-slider"></span>
         </label>
-        <span style="font-weight:600;color:#f9c74f;font-size:0.9rem;" data-tooltip="Replaces the human player with an AI for observation/debugging — watch AI vs AI via the Game Log">🤖 Debug: AI vs AI</span>
+        <span style="font-weight:600;color:#f9c74f;font-size:0.9rem;" data-tooltip="Removes the human player: only the computer players play, with every card visible. Needs at least 3 computers. Watch AI vs AI via the Game Log">🤖 Debug: AI vs AI</span>
       </div>
       <div style="font-weight:700">Computers</div>
       <div class="player-controls">
@@ -231,7 +231,7 @@
           </div>
         </div>
       </div>
-      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 420px;">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 560px;">
         <div class="sliders-row" style="flex-direction: column; gap: 20px;">
           <label style="display:flex; flex-direction: column; font-weight: 600;">
             Suit Size:
@@ -242,11 +242,21 @@
             <input type="range" id="rankSizeSlider" min="55" max="80" value="65" style="width: 100%;">
           </label>
         </div>
-        <div style="display: flex; gap: 16px; flex-wrap: nowrap; align-items: flex-start;">
-          <div id="cardBackPreview" style="width:160px;height:224px;border-radius:12px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
-          <div id="cardPreview" class="card-preview" style="flex-shrink:0;"></div>
-          <div id="tablecardBackPreview" style="width:75px;height:105px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
-          <div id="tablecardPreview" class="tablecard-preview" style="flex-shrink:0;"></div>
+        <div style="display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start;">
+          <div>
+            <div style="font-weight:600;margin-bottom:6px;">Your hand &amp; the piles</div>
+            <div style="display:flex;gap:16px;">
+              <div id="cardBackPreview" style="width:160px;height:217px;border-radius:11px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
+              <div id="cardPreview" class="card-preview" style="flex-shrink:0;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="font-weight:600;margin-bottom:6px;">Contract areas &amp; computer hands</div>
+            <div style="display:flex;gap:16px;">
+              <div id="tablecardBackPreview" style="width:75px;height:108px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,0.6);background:black;position:relative;flex-shrink:0;"></div>
+              <div id="tablecardPreview" class="tablecard-preview" style="flex-shrink:0;"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -27,9 +27,8 @@
     if (!cards || cards.length < 3) return false;
     const wildCnt  = cards.filter(isWild).length;
     const nonWilds = cards.filter(c => !isWild(c));
-    // A set consisting entirely of wilds is not valid — rank must be established
-    // by at least one real card.
-    if (nonWilds.length === 0) return false;
+    // An all-wild set (3+ wilds) is legal, a rare edge case: it stays open and the
+    // first natural card played onto it fixes its rank.
     const distinctRanks = [...new Set(nonWilds.map(c => c.rank))];
     if (distinctRanks.length > 1) return false;
     const needed = Math.max(0, 3 - nonWilds.length);
@@ -48,9 +47,8 @@
     const nonWilds = cards.filter(c => !isWild(c));
     const totalLen = nonWilds.length + wildCnt;
     if (totalLen < 4) return false;
-    // A run consisting entirely of wilds is not valid — suit and at least one
-    // rank position must be established by a real card.
-    if (nonWilds.length === 0) return false;
+    // An all-wild run (4+ wilds) is legal, a rare edge case: it stays open and the
+    // first natural card played onto it fixes its suit and position.
 
     const distinctSuits = [...new Set(nonWilds.map(c => c.suit))];
     if (distinctSuits.length > 1) return false;
@@ -120,7 +118,10 @@
       // Require at least one non-wild to anchor the set's rank before
       // allowing a wild extension.
       const anchor = areaCards.find(c => !isWild(c));
-      if (!anchor) continue;
+      if (!anchor) {   // all-wild set: any card may join; a natural fixes the rank
+        if (isValidSet([...areaCards, card])) return { type: 'set', areaIdx };
+        continue;
+      }
       if (isWild(card) || card.rank === anchor.rank) {
         if (isValidSet([...areaCards, card])) return { type: 'set', areaIdx };
       }
@@ -130,81 +131,145 @@
 
   // Can `card` extend a staged (pre-lay-down) run area for playerIdx?
   function canExtendStagedRun(card, playerIdx) {
-    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
+    const RVAL = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
+                   '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
     const subAreas = _getSubAreas(playerIdx);
     for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
       const label = (subAreas[areaIdx].dataset.label || '').toLowerCase();
       if (!label.includes('run')) continue;
       const areaCards = _getSubAreaCards(playerIdx, areaIdx);
-      // A staged run needs at least 4 cards to be valid and extendable.
       if (areaCards.length < 4) continue;
       const nonWilds = areaCards.filter(c => !isWild(c));
-      if (nonWilds.length === 0) continue;
-      const lowVal  = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
-      const highVal = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
-      const cardVal = rankValues[card.rank] || 0;
-      if (isWild(card) || card.suit === nonWilds[0].suit) {
-        if (isWild(card) || cardVal === lowVal - 1 || cardVal === highVal + 1) {
-          return { type: 'run', areaIdx };
-        }
+      if (nonWilds.length === 0) {   // all-wild run: a natural fixes suit and position
+        if (isValidRun([...areaCards, card])) return { type: 'run', areaIdx };
+        continue;
+      }
+      if (!isWild(card) && card.suit !== nonWilds[0].suit) continue;
+      const lowVal      = Math.min(...nonWilds.map(c => RVAL[c.rank] || 0));
+      const highVal     = Math.max(...nonWilds.map(c => RVAL[c.rank] || 0));
+      const cardValLow  = RVAL[card.rank] || 0;
+      const cardValHigh = card.rank === 'A' ? 14 : cardValLow;
+      if (isWild(card) || cardValLow === lowVal - 1 || cardValHigh === highVal + 1) {
+        return { type: 'run', areaIdx };
       }
     }
     return null;
   }
 
-  // Can `card` be played onto any already-laid-down contract on the table?
-  // Returns { playerIdx, areaIdx, type, insertEnd } where insertEnd is
-  // 'low' (prepend) or 'high' (append) for runs, null for sets.
-  function canPlayOnExistingContracts(card, myIdx) {
-    const { players, subcontractCards, laidDownPlayers } = window.gameState.getState();
-    const rankValues = { 'A':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,
-                         '8':8,'9':9,'10':10,'J':11,'Q':12,'K':13 };
+  // Every place `card` could be played on the laid-down contracts of the table.
+  // Returns [{ playerIdx, areaIdx, type, insertEnd }] where insertEnd is 'low'
+  // (prepend) or 'high' (append) for runs, null for sets. `table` is optional
+  // ({ players, subcontractCards, laidDownPlayers, roundIndex }); the AI passes a
+  // virtual copy to look ahead without touching the real game.
+  function findPlayTargets(card, myIdx, table) {
+    const { players, subcontractCards, laidDownPlayers, roundIndex } = table || window.gameState.getState();
+    const labels = window.gameState.CONTRACT_SUB_AREAS;
+    const out = [];
     for (let i = 0; i < players.length; i++) {
       if (!laidDownPlayers.has(i)) continue;
-      const subAreas = _getSubAreas(i);
-      for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
-        const label     = (subAreas[areaIdx].dataset.label || '').toLowerCase();
+      // Use gameState labels as primary source; fall back to DOM.
+      const roundLabels = labels[roundIndex] || [];
+      const numAreas    = roundLabels.length || _getSubAreas(i).length;
+      for (let areaIdx = 0; areaIdx < numAreas; areaIdx++) {
+        const label     = (roundLabels[areaIdx] || _getSubAreas(i)[areaIdx]?.dataset?.label || '').toLowerCase();
         const areaCards = (subcontractCards[players[i]] || []).filter(c => c.subArea === areaIdx);
         if (label.includes('set')) {
           if (isValidSet([...areaCards, card]))
-            return { playerIdx: i, areaIdx, type: 'set', insertEnd: null };
+            out.push({ playerIdx: i, areaIdx, type: 'set', insertEnd: null });
         }
         if (label.includes('run')) {
-          const nonWilds = areaCards.filter(c => !isWild(c));
-          if (nonWilds.length === 0) continue;
-          if (!isWild(card) && card.suit !== nonWilds[0].suit) continue;
-          const lowVal  = Math.min(...nonWilds.map(c => rankValues[c.rank] || 0));
-          const highVal = Math.max(...nonWilds.map(c => rankValues[c.rank] || 0));
-          const cardVal = rankValues[card.rank] || 0;
-          if (isWild(card)) {
-            // Wilds extend the high end by convention.
-            return { playerIdx: i, areaIdx, type: 'run', insertEnd: 'high' };
+          if (areaCards.every(isWild)) {   // all-wild run: a card that fits once it has 4+ cards
+            if (areaCards.length >= 4 && isValidRun([...areaCards, card]))
+              out.push({ playerIdx: i, areaIdx, type: 'run', insertEnd: 'high' });
+            continue;
           }
-          if (cardVal === lowVal - 1)
-            return { playerIdx: i, areaIdx, type: 'run', insertEnd: 'low' };
-          if (cardVal === highVal + 1)
-            return { playerIdx: i, areaIdx, type: 'run', insertEnd: 'high' };
+          // Positional check: the run is an ordered row, so try the card at either
+          // end and let isValidRun decide (this also lets a card follow a wild that
+          // already stands at the end, e.g. 4 5 6 7 [wild=8] then a 9).
+          if (isValidRun([...areaCards, card]))
+            out.push({ playerIdx: i, areaIdx, type: 'run', insertEnd: 'high' });
+          if (isValidRun([card, ...areaCards]))
+            out.push({ playerIdx: i, areaIdx, type: 'run', insertEnd: 'low' });
         }
       }
     }
-    return null;
+    return out;
+  }
+
+  // Can `card` be played onto any already-laid-down contract on the table?
+  // Returns the first { playerIdx, areaIdx, type, insertEnd } or null.
+  function canPlayOnExistingContracts(card, myIdx) {
+    return findPlayTargets(card, myIdx)[0] || null;
   }
 
   // Does a player have all required contracts fully staged?
+  // Uses gameState.CONTRACT_SUB_AREAS labels directly — not DOM data-label —
+  // so it works correctly during AI turns when DOM may be mid-render.
   function hasCompleteStagedContracts(playerIdx) {
-    const { roundIndex } = window.gameState.getState();
-    const required  = window.gameState.ROUND_REQUIREMENTS[roundIndex];
+    const { roundIndex, players, subcontractCards } = window.gameState.getState();
+    const required = window.gameState.ROUND_REQUIREMENTS[roundIndex];
     if (!required) return false;
-    const subAreas  = _getSubAreas(playerIdx);
+    const labels   = window.gameState.CONTRACT_SUB_AREAS[roundIndex];
+    if (!labels || !labels.length) return false;
+    const player   = players[playerIdx];
+    const flat     = subcontractCards[player] || [];
     let setsOk = 0, runsOk = 0;
-    for (let areaIdx = 0; areaIdx < subAreas.length; areaIdx++) {
-      const label     = (subAreas[areaIdx].dataset.label || '').toLowerCase();
-      const areaCards = _getSubAreaCards(playerIdx, areaIdx);
-      if (label.includes('set') && isValidSet(areaCards))  setsOk++;
-      else if (label.includes('run') && isValidRun(areaCards)) runsOk++;
-    }
+    labels.forEach((label, areaIdx) => {
+      const areaCards  = flat.filter(c => c.subArea === areaIdx);
+      const lowerLabel = label.toLowerCase();
+      if (lowerLabel.includes('set') && isValidSet(areaCards))  setsOk++;
+      else if (lowerLabel.includes('run') && isValidRun(areaCards)) runsOk++;
+    });
     return setsOk >= required.sets && runsOk >= required.runs;
+  }
+
+  // ─── Wild swap ────────────────────────────────────────────────────────────
+  // A natural card may replace a wild that sits in a LAID-DOWN group, and the
+  // wild goes to the swapper's hand.
+  //   Sets : any card of the set's rank (an all-wild set: the first natural fixes the rank).
+  //   Runs : only the card the wild stands for. Order matters, so the wild's slot is fixed by
+  //          where it was placed; the card replaces it IN PLACE (an all-wild run: the first
+  //          natural fixes suit and position, as long as the result is a valid run).
+  // Both rules reduce to: swap in place, then re-validate the group.
+  function canSwapWild(areaCards, label, card, wildIdx) {
+    if (!card || isWild(card)) return false;
+    if (!areaCards || !areaCards[wildIdx] || !isWild(areaCards[wildIdx])) return false;
+    const candidate = areaCards.slice();
+    candidate[wildIdx] = card;
+    const l = String(label || '').toLowerCase();
+    if (l.includes('set')) return isValidSet(candidate);
+    if (l.includes('run')) return isValidRun(candidate);
+    return false;
+  }
+
+  // Is player myIdx allowed to swap at all right now (setting + lay-down status)?
+  //   off  : never.   pre : only before laying down.   post : always.
+  function swapPolicy(myIdx, table) {
+    const mode = String(window.gameRules?.wildSwap || 'off').toLowerCase();
+    if (mode === 'off') return false;
+    const { laidDownPlayers } = table || window.gameState.getState();
+    if (mode === 'pre') return !laidDownPlayers.has(myIdx);
+    return mode === 'post';
+  }
+
+  // Every wild on the table that `card` could replace.
+  // Returns [{ playerIdx, areaIdx, wildIdx, wild }], wildIdx = position inside the area.
+  function findSwapTargets(card, myIdx, table) {
+    const out = [];
+    if (!card || isWild(card) || !swapPolicy(myIdx, table)) return out;
+    const { players, subcontractCards, laidDownPlayers, roundIndex } = table || window.gameState.getState();
+    const labels = (window.gameState.CONTRACT_SUB_AREAS || {})[roundIndex] || [];
+    for (let i = 0; i < players.length; i++) {
+      if (!laidDownPlayers.has(i)) continue;
+      labels.forEach((label, areaIdx) => {
+        const areaCards = (subcontractCards[players[i]] || []).filter(c => c.subArea === areaIdx);
+        areaCards.forEach((w, wildIdx) => {
+          if (isWild(w) && canSwapWild(areaCards, label, card, wildIdx))
+            out.push({ playerIdx: i, areaIdx, wildIdx, wild: w });
+        });
+      });
+    }
+    return out;
   }
 
   // ─── Export ───────────────────────────────────────────────────────────────
@@ -212,6 +277,10 @@
     isWild,
     isValidSet,
     isValidRun,
+    canSwapWild,
+    swapPolicy,
+    findSwapTargets,
+    findPlayTargets,
     canExtendStagedSet,
     canExtendStagedRun,
     canPlayOnExistingContracts,

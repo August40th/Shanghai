@@ -84,6 +84,7 @@
     const state = getState();
     if (state.roundFinished) return;
     setState({ roundFinished: true });
+    window.roundManager?.revealAll?.(true);   // show every hand and staged card
 
     const {
       players, roundIndex,
