@@ -8,11 +8,13 @@ const contents = {
   cards: document.getElementById('content-cards')
 };
 
+let currentPageId = 'summary';   // Detailed Rules page being shown (declared early: updateSummary() uses it)
+
 // Buying clock
 const buyClock=document.getElementById('buyClockRange');
 const buyClockValue=document.getElementById('buyClockValue');
 function updateBuyClock(){
-  buyClockValue.textContent=buyClock.value;
+  buyClockValue.textContent=buyClock.value+' s';
   const pct=(buyClock.value-buyClock.min)/(buyClock.max-buyClock.min)*100;
   buyClock.style.background=`linear-gradient(to right, var(--slider-red) ${pct}%, #555 ${pct}%)`;
 }
@@ -35,8 +37,7 @@ function updateSummary() {
   const optOutChk = document.getElementById('optOutChk').checked;
   const selfDiscardChk = document.getElementById('selfDiscardChk').checked;
 
-  let qsummary = "● 2 decks with 3 players, +1 deck for every 2+ players<br>";
-  if (extraDeck) qsummary = qsummary.replace("2 decks with 3 players", "3 decks with 3 players");
+  let qsummary = `● ${extraDeck ? 3 : 2} decks for 3–4 players, +1 deck for every 2 more players<br>`;
   if (extraSuit) qsummary += "● 5th suit (Stars ★) added<br>";
   qsummary += "● Players are dealt 10 cards each round<br>";
   qsummary += "● On your turn: Draw → Lay Down → Play → Discard<br>";
@@ -49,8 +50,8 @@ function updateSummary() {
   if (wildCards) {
     let wildTypeDesc = {"Classic":"<strong>(3♦/3♥)</strong>","Extra":"<strong>(3♦/3♥/3★)</strong>","Joker":"<strong>(Jokers)</strong>"}[wildTypeBtn.textContent]||"";
     qsummary += `● <strong>WILD CARDS</strong> ${wildTypeDesc}: may be used as <strong>ANY</strong> rank/suit<br>`;
-    if (wildSwapBtn.textContent === "Pre") qsummary += "● Wild swap: only before laying down (then you must lay down that turn)<br>";
-    else if (wildSwapBtn.textContent === "Post") qsummary += "● Wild swap: before or after laying down (before = you must lay down that turn)<br>";
+    if (wildSwapBtn.textContent === "Pre") qsummary += "● Wild swapping: before laying down<br>";
+    else if (wildSwapBtn.textContent === "Post") qsummary += "● Wild swapping: before or after laying down<br>";
   }
   
   qsummary += `● Players have <strong>${buyClock.value}s</strong> to declare a <strong>BUY</strong><br>`;
@@ -61,22 +62,25 @@ function updateSummary() {
   
   let shanghaiBonus = "";
   if (softShanghai) shanghaiBonus += "+25 Soft";
-  if (hardShanghai) shanghaiBonus += (shanghaiBonus?", ":"") + "+50 Hard";
+  if (hardShanghai) shanghaiBonus += (shanghaiBonus?", ":"") + "+50 Shanghai";
   if (finalShanghai) shanghaiBonus += (shanghaiBonus?", ":"") + "+100 Final";
   if (shanghaiBonus) qsummary += `● Shanghai bonuses: ${shanghaiBonus}`;
   
   summaryContent.innerHTML = qsummary;
+  renderDetailed();
 }
 updateSummary();
 
 const tooltipBar = document.getElementById('tooltipBar');
+const TIP_DEFAULT = 'Hover over a control for help.';
 tabs.forEach(t => {
   t.addEventListener('click', () => {
     tabs.forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     Object.values(contents).forEach(content => content.style.display = 'none');
+    tooltipBar.textContent = TIP_DEFAULT;
     if (t.id === 'tab-summary') { contents.summary.style.display = 'block'; tooltipBar.style.display = 'none'; }
-    else if (t.id === 'tab-custom') { contents.custom.style.display = 'block'; tooltipBar.style.display = 'flex'; }
+    else if (t.id === 'tab-custom') { contents.custom.style.display = 'block'; tooltipBar.style.display = 'block'; }
     else if (t.id === 'tab-players') { contents.players.style.display = 'flex'; tooltipBar.style.display = 'block'; }
     else if (t.id === 'tab-detailed') { contents.detailed.style.display = 'block'; tooltipBar.style.display = 'none'; }
     else if (t.id === 'tab-cards') { contents.cards.style.display = 'block'; tooltipBar.style.display = 'none'; }
@@ -89,13 +93,28 @@ document.querySelectorAll('#content-custom input[type="checkbox"]').forEach(chec
 document.getElementById('wildTypeBtn').addEventListener('click', updateSummary);
 document.getElementById('wildSwapBtn').addEventListener('click', updateSummary);
 
-function attachTooltips(){
-  document.querySelectorAll('[data-tooltip]').forEach(el=>{
-    el.addEventListener('mouseenter',()=>{document.getElementById('tooltipBar').textContent=el.getAttribute('data-tooltip');});
-    el.addEventListener('mouseleave',()=>{document.getElementById('tooltipBar').textContent="Hover over a rule name for help.";});
+// Tooltips: one delegated listener, so every element with data-tooltip works (including
+// buttons, sliders and rows built later).  Rule names, their switches/buttons and the
+// clock slider all carry the same help text.
+function linkTips() {
+  document.querySelectorAll('#content-custom .rule-item').forEach(item => {
+    const tip = item.querySelector('[data-tooltip]')?.getAttribute('data-tooltip');
+    if (tip) item.querySelectorAll('.compact-switch, button').forEach(el => { if (!el.hasAttribute('data-tooltip')) el.setAttribute('data-tooltip', tip); });
   });
+  const clockTip = document.querySelector('.clock-label')?.getAttribute('data-tooltip');
+  if (clockTip) ['buyClockRange', 'buyClockValue'].forEach(id => document.getElementById(id)?.setAttribute('data-tooltip', clockTip));
+  const dbg = document.getElementById('debugAiChk');
+  const dbgTip = dbg?.closest('div')?.querySelector('span[data-tooltip]')?.getAttribute('data-tooltip');
+  if (dbgTip) dbg.closest('.compact-switch')?.setAttribute('data-tooltip', dbgTip);
 }
-attachTooltips();
+function _tipEl(e) { return e.target && e.target.closest ? e.target.closest('[data-tooltip]') : null; }
+function _tipShow(e) { const el = _tipEl(e); if (el) tooltipBar.textContent = el.getAttribute('data-tooltip'); }
+function _tipHide(e) { const el = _tipEl(e); if (el && !(e.relatedTarget && el.contains(e.relatedTarget))) tooltipBar.textContent = TIP_DEFAULT; }
+document.addEventListener('mouseover', _tipShow);
+document.addEventListener('mouseout',  _tipHide);
+document.addEventListener('focusin',   _tipShow);
+document.addEventListener('focusout',  _tipHide);
+linkTips();
 
 // Players tab
 let numComputers=3;
@@ -105,6 +124,10 @@ const numCompDisplay=document.getElementById('numCompDisplay');
 const decComp=document.getElementById('decComp');
 const incComp=document.getElementById('incComp');
 const randomizeBtn=document.getElementById('randomizeBtn');
+const NAME_MAX = 12;
+const debugChk = document.getElementById('debugAiChk');
+const playersMsg = document.getElementById('playersMsg');
+const minComputers = () => debugChk.checked ? 3 : 2;   // debug has no human, so it needs 3 computers
 const aiPool=["Alice","Bob","Charlie","David","Erik","Frank","George","Henry","Ivy","Jason","Kerry","Lauren","Mark","Ned","Oscar","Paul","Rob","Tom","Victor","Zeb"];
 const difficultyTooltips={"Easy":"Evaluates rules and its own hand, cards it has discarded, and last 5 discards in the discard pile","Medium":"Evaluates its own hand, the entire discard pile, plus a 33% chance to maximize the score of the cards played when laying down and playing cards into the play area as to minimize the score of the cards remaining in its hand after discarding.","Hard":"Normal AI with 75% chance to maximize laydown, plus tracks which cards players have taken and discarded to infer which sets/runs other players might be collecting to better evaluate discard choices, the cards remaining in the draw pile, and which cards to buy","Ruthless":"Hard AI with 50% chance to veto another player's buy if it reasonablly infers that the buyer needs that card to get closer to a complete a run or set he/she is collecting"};
 
@@ -129,8 +152,10 @@ function buildPlayerSlots() {
     nameInput.type = 'text';
     nameInput.className = 'player-name-input';
     nameInput.style.cssText = 'width:100%;box-sizing:border-box;background:transparent;color:white;border:none;border-bottom:1px solid rgba(255,255,255,0.3);font-weight:600;text-align:center;';
-    nameInput.value = savedNames[i] || `Computer ${i + 1}`;
-    nameInput.addEventListener('input', () => { savedNames[i] = nameInput.value; saveSettingsToCookies(); });
+    nameInput.maxLength = NAME_MAX;
+    nameInput.setAttribute('data-tooltip', `Computer name (up to ${NAME_MAX} characters)`);
+    nameInput.value = (savedNames[i] ?? `Computer ${i + 1}`).slice(0, NAME_MAX);
+    nameInput.addEventListener('input', () => { savedNames[i] = nameInput.value; saveSettingsToCookies(); validatePlayers(); });
 
     const diffBtn = document.createElement('button');
     diffBtn.className = 'difficulty-btn';
@@ -155,11 +180,41 @@ function buildPlayerSlots() {
     playersGrid.appendChild(slot);
   }
   numCompDisplay.textContent = numComputers;
-  attachTooltips();
+  validatePlayers();
 }
 
-decComp.addEventListener('click',()=>{if(numComputers>2){numComputers--;buildPlayerSlots();}});
+decComp.addEventListener('click',()=>{if(numComputers>minComputers()){numComputers--;buildPlayerSlots();}});
 incComp.addEventListener('click',()=>{if(numComputers<10){numComputers++;buildPlayerSlots();}});
+
+// Debug mode removes the human, so the name field is not used and the minimum is 3 computers.
+function applyDebugState() {
+  humanNameInput.disabled = debugChk.checked;
+  if (debugChk.checked && numComputers < 3) { numComputers = 3; buildPlayerSlots(); }
+  validatePlayers();
+}
+debugChk.addEventListener('change', applyDebugState);
+
+// Names must be filled in and unique (case-insensitive).  Returns the message, or '' when fine.
+function validatePlayers() {
+  const entries = [];
+  if (!debugChk.checked) entries.push(humanNameInput);
+  document.querySelectorAll('#playersGrid .player-slot:not(.inactive) input.player-name-input').forEach(i => entries.push(i));
+  const seen = new Map();
+  entries.forEach(i => { const k = i.value.trim().toLowerCase(); if (k) seen.set(k, (seen.get(k) || 0) + 1); });
+  let blank = false, dup = '';
+  entries.forEach(i => {
+    const v = i.value.trim(), k = v.toLowerCase();
+    const bad = !v || seen.get(k) > 1;
+    i.classList.toggle('invalid', bad);
+    if (!v) blank = true; else if (seen.get(k) > 1 && !dup) dup = v;
+  });
+  humanNameInput.classList.toggle('invalid', humanNameInput.classList.contains('invalid') && !debugChk.checked);
+  const msg = blank ? 'Every player needs a name.' : (dup ? `Two players are named "${dup}". Names must be different.` : '');
+  playersMsg.textContent = msg;
+  return msg;
+}
+humanNameInput.addEventListener('input', validatePlayers);
+
 randomizeBtn.addEventListener('click', () => {
   // Fisher-Yates on a copy — avoids the biased sort() shuffle and
   // avoids permanently mutating the aiPool array.
@@ -175,6 +230,7 @@ randomizeBtn.addEventListener('click', () => {
       if (nameInput) { nameInput.value = pool[i]; saveSettingsToCookies(); }
     }
   });
+  validatePlayers();
 });
 buildPlayerSlots();
 
@@ -188,6 +244,10 @@ function updateWildButtons(){
   const enabled=wildCardsChk.checked;
   wildTypeBtn.classList.toggle('disabled', !enabled);
   wildSwapBtn.classList.toggle('disabled', !enabled);
+  wildSwapBtn.classList.toggle('greyed', wildSwapBtn.textContent === 'Off');
+  wildSwapBtn.setAttribute('aria-disabled', String(!enabled));
+  wildTypeBtn.setAttribute('aria-disabled', String(!enabled));
+  renderDetailed();
 }
 wildCardsChk.addEventListener('change', updateWildButtons);
 updateWildButtons();
@@ -207,20 +267,111 @@ wildSwapBtn.addEventListener('click', () => {
   wsIndex = (wsIndex + 1) % wildSwapStates.length;
   wildSwapBtn.textContent = wildSwapStates[wsIndex];
   updateSummary();
-  wildSwapBtn.classList.toggle('greyed', wildSwapBtn.textContent === 'Off');
+  updateWildButtons();
 });
 
-// Detailed rules paging
-const detailedPages=document.querySelectorAll('.rule-page');
-let currentPage=0;
-function showPage(idx){
-  detailedPages.forEach(p=>p.classList.remove('active'));
-  detailedPages[idx].classList.add('active');
-  document.getElementById('detailedTitle').textContent=detailedPages[idx].getAttribute('data-title');
+// Detailed rules: the pages are rebuilt from the Custom Rules settings (updateSummary() calls
+// renderDetailed() on every change), so only rules that are switched on are described.
+function _rules() {
+  const on = id => document.getElementById(id).checked;
+  return {
+    extraSuit: on('extraSuitChk'), wrapRuns: on('wrapRunsChk'), wilds: on('wildCardsChk'),
+    fastBuy: on('fastBuyChk'), optOut: on('optOutChk'), selfDiscard: on('selfDiscardChk'),
+    soft: on('softShanghaiChk'), hard: on('hardShanghaiChk'), final: on('finalShanghaiChk'),
+    wildType: document.getElementById('wildTypeBtn').textContent,
+    wildSwap: document.getElementById('wildSwapBtn').textContent,
+    clock: document.getElementById('buyClockRange').value
+  };
 }
-document.getElementById('prevDetailed').addEventListener('click',()=>{currentPage=(currentPage-1+detailedPages.length)%detailedPages.length;showPage(currentPage);});
-document.getElementById('nextDetailed').addEventListener('click',()=>{currentPage=(currentPage+1)%detailedPages.length;showPage(currentPage);});
-showPage(currentPage);
+
+function buildDetailedPages() {
+  const r = _rules();
+  const pages = [];
+
+  // 1. Summary
+  let sm = '<p><strong>SHANGHAI</strong> is a rummy style card game containing seven rounds.</p>';
+  sm += '<p>Players take turns with a mandatory action of drawing one card from either draw or discard pile, and discarding one card from his/her hand to the top of the discard pile</p>';
+  sm += "<p>Each round players aim to collect that round's <strong>CONTRACT</strong> of <strong>SETS</strong> and/or <strong>RUNS</strong></p>";
+  sm += '<p>A <strong>SET</strong> is 3+ cards of the same rank. A <strong>RUN</strong> is 4+ cards of the same suit in sequential order. '
+      + (r.wrapRuns ? 'Aces may be high or low, and runs may wrap around (K-A-2-3).' : 'Aces are high or low, not both.') + '</p>';
+  if (r.extraSuit) sm += '<p>A fifth suit, Stars (★), is added to every deck.</p>';
+  if (r.wilds) {
+    const wt = { Classic: 'The 3♦ and 3♥ are wild.', Extra: 'The 3♦, 3♥ and 3★ are wild.', Joker: 'Jokers are wild.' }[r.wildType] || '';
+    sm += `<p><strong>WILD CARDS</strong> can assume <strong>ANY</strong> rank and/or suit but count 20 points if left in hand at round end. ${wt}</p>`;
+  }
+  sm += '<p>Once per round, when a player has collected the <strong>ENTIRE CONTRACT</strong> he/she may <strong>LAY DOWN</strong> the contract face up</p>';
+  sm += '<p>After laying down, players may <strong>PLAY</strong> cards onto any laid down contract</p>';
+  sm += '<p>The first player to discard their final card ends the round scoring <strong>ZERO POINTS</strong></p>';
+  sm += '<p>The objective is to have the <strong>LOWEST SCORE</strong> after seven rounds</p>';
+  pages.push({ id: 'summary', title: 'Detailed Summary', html: sm });
+
+  // 2. Player actions
+  pages.push({ id: 'actions', title: 'Player Actions', html:
+    '<p><strong>Turn Phase:</strong> draw → lay down → play → discard</p>'
+  + '<p><strong>Draw (mandatory)</strong>: Take a card from draw or discard pile</p>'
+  + '<p><strong>Lay Down (optional)</strong>: Place the contract face-up once per round. You must hold at least one card in hand.</p>'
+  + '<p><strong>Play (optional)</strong>: Play cards onto existing sets/runs after laying down</p>'
+  + '<p><strong>Discard (mandatory)</strong>: Discard one card to end turn</p>'
+  + '<p><strong>Buy (optional)</strong>: Take the top discard between turns (see Buying)</p>' });
+
+  // 3. Contracts
+  pages.push({ id: 'contracts', title: 'Contracts', html:
+    '<p>Round 1: 2 Sets | Round 2: 1 Set + 1 Run | Round 3: 2 Runs</p>'
+  + '<p>Round 4: 3 Sets | Round 5: 2 Sets + 1 Run | Round 6: 1 Set + 2 Runs</p>'
+  + '<p>Round 7: 3 Runs</p>' });
+
+  // 4. Buying
+  let by = '<p><strong>Hand size:</strong> 10 cards dealt, plus 2 per buy (the discard plus a penalty card), up to 3 buys.</p>';
+  by += `<p><strong>Buying clock:</strong> after each discard, players have ${r.clock} seconds to declare a buy.</p>`;
+  by += '<p><strong>Take:</strong> the player whose turn is next may take the discard as their draw. A take halves the clock and beats any buy, and it can be declined.</p>';
+  by += r.fastBuy ? '<p><strong>Fast Buying (on):</strong> first to declare gets the card.</p>'
+                  : '<p><strong>Fast Buying (off):</strong> first in seat order gets the card.</p>';
+  by += r.optOut  ? '<p><strong>Opt Out (on):</strong> you may withdraw your decision before the clock ends.</p>'
+                  : '<p><strong>Opt Out (off):</strong> a declared buy is final.</p>';
+  by += r.selfDiscard ? '<p><strong>Self-Discard (on):</strong> you may buy your own discard.</p>'
+                      : '<p><strong>Self-Discard (off):</strong> you may not buy your own discard.</p>';
+  pages.push({ id: 'buying', title: 'Buying', html: by });
+
+  // 5. Wild swapping (only when wilds are on and swapping is enabled)
+  if (r.wilds && r.wildSwap !== 'Off') {
+    let ws = '<p><strong>Wild Swapping:</strong> replace a laid down wild card with the card it represents in a set/run.</p>';
+    ws += r.wildSwap === 'Pre'
+      ? '<p><strong>Pre laydown:</strong> swaps are allowed only before you lay down, and you must lay down that turn or the swaps are undone.</p>'
+      : '<p><strong>Post laydown:</strong> swaps are allowed before or after laying down, but you must lay down that turn if you haven\'t, or the swaps are undone.</p>';
+    pages.push({ id: 'swap', title: 'Wild Swapping', html: ws });
+  }
+
+  // 6. Scoring
+  let sc = '<p>Aces=15, Face cards=10, Number cards=face value' + (r.wilds ? ', Wilds=20' : '') + '</p>';
+  if (r.soft)  sc += '<p><strong>Soft Shanghai (+25):</strong> the first player to lay down goes out on a later turn, before any other player has laid down. Every other player scores +25.</p>';
+  if (r.hard)  sc += '<p><strong>Shanghai (+50, rounds 1–6):</strong> the first player to lay down also goes out on that same turn. Every other player scores +50.</p>';
+  if (r.final) sc += '<p><strong>Final Shanghai (+100, round 7):</strong> the same, in round 7. Every other player scores +100.</p>';
+  pages.push({ id: 'scoring', title: 'Scoring', html: sc });
+
+  return pages;
+}
+
+function renderDetailed() {
+  const body = document.getElementById('detailedBody');
+  const title = document.getElementById('detailedTitle');
+  if (!body || !title) return;
+  const pages = buildDetailedPages();
+  let idx = pages.findIndex(p => p.id === currentPageId);
+  if (idx < 0) { idx = 0; currentPageId = pages[0].id; }   // e.g. the swap page was switched off
+  body.innerHTML = pages[idx].html;
+  title.textContent = pages[idx].title;
+}
+
+function stepDetailed(d) {
+  const pages = buildDetailedPages();
+  let idx = Math.max(0, pages.findIndex(p => p.id === currentPageId));
+  idx = (idx + d + pages.length) % pages.length;
+  currentPageId = pages[idx].id;
+  renderDetailed();
+}
+document.getElementById('prevDetailed').addEventListener('click', () => stepDetailed(-1));
+document.getElementById('nextDetailed').addEventListener('click', () => stepDetailed(1));
+renderDetailed();
 
 // Card customization
 const suitData = [{key:"diamonds",symbol:"♦"},{key:"clubs",symbol:"♣"},{key:"hearts",symbol:"♥"},{key:"spades",symbol:"♠"},{key:"stars",symbol:"★"}];
@@ -512,12 +663,12 @@ function loadSettingsFromCookies() {
   if (playersCookie) {
     try {
       const pd = JSON.parse(playersCookie);
-      if (pd.humanName) document.getElementById('humanNameInput').value = pd.humanName;
+      if (pd.humanName) document.getElementById('humanNameInput').value = String(pd.humanName).slice(0, NAME_MAX);
       if (pd.numComp) numComputers = pd.numComp;
       buildPlayerSlots();
       if (Array.isArray(pd.compNames)) {
         const slots = document.querySelectorAll('#playersGrid .player-slot');
-        pd.compNames.forEach((name,i) => { if (slots[i]) { const nameInput = slots[i].querySelector('input.player-name-input'); if(nameInput) nameInput.value = name; }});
+        pd.compNames.forEach((name,i) => { if (slots[i]) { const nameInput = slots[i].querySelector('input.player-name-input'); if(nameInput) nameInput.value = String(name).slice(0, NAME_MAX); }});
       }
       if (Array.isArray(pd.compDifficulties)) {
         const slots = document.querySelectorAll('#playersGrid .player-slot');
@@ -548,6 +699,8 @@ function loadSettingsFromCookies() {
 
 window.addEventListener('load', () => {
   loadSettingsFromCookies();
+  updateWildButtons();
+  applyDebugState();
   updateSummary();
   if (document.getElementById('tab-summary').classList.contains('active')) {
     document.getElementById('tooltipBar').style.display = 'none';
@@ -582,6 +735,9 @@ updateCardBackPreview();
 updateTableCardBackPreview();
 
 document.querySelector('.start-btn').addEventListener('click', () => {
+  // Names must be filled in and unique: show the problem on the Players tab instead of starting.
+  const problem = validatePlayers();
+  if (problem) { document.getElementById('tab-players').click(); return; }
   const humanName   = document.getElementById('humanNameInput').value.trim() || 'Player1';
   const debugAI     = document.getElementById('debugAiChk').checked;
   const compNames   = [];

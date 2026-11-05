@@ -58,7 +58,7 @@
             <input type="checkbox" id="wildCardsChk" checked>
             <span class="compact-slider"></span>
           </label>
-          <div class="rule-label" data-tooltip="Wild cards may represent any rank/suit">Wild Cards</div>
+          <div class="rule-label" data-tooltip="Wild cards stand for any rank and suit. They count 20 points if left in hand at the end of a round.">Wild Cards</div>
         </div>
         <div class="rule-item" style="gap:14px">
           <button id="wildTypeBtn" class="wild-type-btn">Classic</button>
@@ -66,7 +66,7 @@
         </div>
         <div class="rule-item" style="gap:14px">
           <button id="wildSwapBtn" class="wild-swap-btn">Off</button>
-          <div class="rule-label" data-tooltip="Drop a card onto a wild in a laid-down group to take the wild. Sets: any card of the rank. Runs: only the card the wild stands for. Pre: only before you lay down. Post: before or after. A swap before laying down means you must lay down that turn, or it is undone.">Wild Swap</div>
+          <div class="rule-label" data-tooltip="Replace a laid-down wild with the card it represents. Sets: any card of the rank. Runs: only the card the wild stands for. Pre: swaps only before you lay down. Post: before or after. Swapping before you lay down means you must lay down that turn, or the swaps are undone.">Wild Swap</div>
         </div>
       </div>
       <div class="rule-column">
@@ -75,26 +75,26 @@
             <input type="checkbox" id="fastBuyChk" checked>
             <span class="compact-slider"></span>
           </label>
-          <div class="rule-label" data-tooltip="First player to declare buy takes priority">Fast Buying</div>
+          <div class="rule-label" data-tooltip="On: the first player to declare a buy gets the card. Off: the first player in seat order gets it.">Fast Buying</div>
         </div>
         <div class="rule-item">
           <label class="compact-switch">
             <input type="checkbox" id="optOutChk">
             <span class="compact-slider"></span>
           </label>
-          <div class="rule-label" data-tooltip="Allow players to opt out of a declared buy">Opt Out</div>
+          <div class="rule-label" data-tooltip="On: a player may withdraw a declared buy before the clock ends. Off: a declared buy is final.">Opt Out</div>
         </div>
         <div class="rule-item">
           <label class="compact-switch">
             <input type="checkbox" id="selfDiscardChk">
             <span class="compact-slider"></span>
           </label>
-          <div class="rule-label" data-tooltip="A player can buy his/her own discard">Self-Discard Buying</div>
+          <div class="rule-label" data-tooltip="A player may buy his/her own discard.">Self-Discard Buying</div>
         </div>
         <div style="margin-top:8px">
-          <div class="clock-label" data-tooltip="Time available after a discard to declare a buy">Buying Clock (seconds)</div>
+          <div class="clock-label" data-tooltip="Time available after a discard to declare a buy">Buying Clock</div>
           <input id="buyClockRange" type="range" min="5" max="20" value="16">
-          <div id="buyClockValue" style="min-width:30px;text-align:right">16</div>
+          <div id="buyClockValue" style="min-width:30px;text-align:right">16 s</div>
         </div>
       </div>
     </div>
@@ -132,7 +132,7 @@
   <div id="content-players" class="card players-card" style="display:none">
     <div class="players-left">
       <label>Player Name:
-        <input type="text" id="humanNameInput" value="Player1" style="width:60%;padding:6px;border-radius:6px;border:0;background:rgba(0,0,0,0.12);color:#fff">
+        <input type="text" id="humanNameInput" value="Player1" maxlength="12" data-tooltip="Your name (up to 12 characters)" style="width:160px;padding:6px;border-radius:6px;border:0;background:rgba(0,0,0,0.12);color:#fff">
       </label>
       <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
         <label class="compact-switch" title="Debug mode: no human player. Only the computer players are in the game, every card is visible, and there is no seat for you — use the Game Log to observe (needs at least 3 computers)">
@@ -143,13 +143,14 @@
       </div>
       <div style="font-weight:700">Computers</div>
       <div class="player-controls">
-        <button id="decComp" class="btn" style="background: var(--on-red);color:white">-</button>
+        <button id="decComp" class="btn" data-tooltip="Remove a computer player" style="background: var(--on-red);color:white">-</button>
         <div id="numCompDisplay" style="width:24px;text-align:center">3</div>
-        <button id="incComp" class="btn" style="background: var(--on-red);color:white">+</button>
+        <button id="incComp" class="btn" data-tooltip="Add a computer player (up to 10)" style="background: var(--on-red);color:white">+</button>
         <div style="width:12px"></div>
-        <button id="randomizeBtn" class="btn random-btn">Randomize Names</button>
+        <button id="randomizeBtn" class="btn random-btn" data-tooltip="Give the computer players random names">Randomize Names</button>
       </div>
     </div>
+    <div id="playersMsg" class="players-msg" role="alert"></div>
     <div class="players-grid" id="playersGrid"></div>
   </div>
 
@@ -160,33 +161,7 @@
         <span id="detailedTitle">Summary</span>
         <button class="arrow-btn arrow-right" id="nextDetailed">&#8594;</button>
       </div>
-      <div class="rule-page active" data-title="Detailed Summary">
-        <p><strong>SHANGHAI</strong> is a rummy style card game containing seven rounds.</p>
-        <p>Players take turns with a mandatory action of drawing one card from either draw or discard pile, and discarding one card from his/her hand to the top of the discard pile</p>
-        <p>Each round players aim to collect that round's <strong>CONTRACT</strong> of <strong>SETS</strong> and/or <strong>RUNS</strong></p>
-        <p>A <strong>SET</strong> is 3+ cards of the same rank. A <strong>RUN</strong> is 4+ cards of the same suit in sequential order</p>
-        <p><strong>WILD CARDS</strong> can assume <strong>ANY</strong> rank and/or suit but count 20 points if left in hand at round end</p>
-        <p>Once per round, when a player has collected the <strong>ENTIRE CONTRACT</strong> he/she may <strong>LAY DOWN</strong> the contract face up</p>
-        <p>After laying down, players may <strong>PLAY</strong> cards onto any laid down contract</p>
-        <p>The first player to discard their final card ends the round scoring <strong>ZERO POINTS</strong></p>
-        <p>The objective is to have the <strong>LOWEST SCORE</strong> after seven rounds</p>      
-      </div>
-      <div class="rule-page" data-title="Player Actions">
-        <p><strong>Turn Phase:</strong> draw → lay down → play → discard</p>
-        <p><strong>Draw (mandatory)</strong>: Take a card from draw or discard pile</p>
-        <p><strong>Lay Down (optional)</strong>: Place the required contract face-up once per round</p>
-        <p><strong>Play (optional)</strong>: Play cards onto existing sets/runs after laying down</p>
-        <p><strong>Discard (mandatory)</strong>: Discard one card to end turn</p>
-        <p><strong>Buy (optional)</strong>: Take top discard between turns (draw extra card)</p>
-      </div>
-      <div class="rule-page" data-title="Contracts">
-        <p>Round 1: 2 Sets | Round 2: 1 Set + 1 Run | Round 3: 2 Runs</p>
-        <p>Round 4: 3 Sets | Round 5: 2 Sets + 1 Run | Round 6: 1 Set + 2 Runs</p>
-        <p>Round 7: 3 Runs</p>
-      </div>
-      <div class="rule-page" data-title="Scoring">
-        <p>Aces=15, Face cards=10, Number cards=face value, Wilds=20</p>
-      </div>
+      <div id="detailedBody" class="rule-page active"></div>
     </div>
   </div>
 
@@ -214,24 +189,24 @@
             </label>
             <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
               <button id="backEdgeColor1" class="color-square" style="background:#333; width: 32px; height: 32px;"></button>
-              Radius 1
+              Inner ring
             </label>
             <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
               <button id="backEdgeColor2" class="color-square" style="background:#666; width: 32px; height: 32px;"></button>
-              Radius 2
+              Middle ring
             </label>
             <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
               <button id="backEdgeColor3" class="color-square" style="background:#999; width: 32px; height: 32px;"></button>
-              Radius 3
+              Outer ring
             </label>
             <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none;">
               <button id="backEdgeOutlineColor" class="color-square" style="background:white; width: 32px; height: 32px;"></button>
-              Edge
+              Border
             </label>
           </div>
         </div>
       </div>
-      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 560px;">
+      <div style="flex: 0 1 300px; min-width: 240px; display: flex; flex-direction: column; gap: 12px;">
         <div class="sliders-row" style="flex-direction: column; gap: 20px;">
           <label style="display:flex; flex-direction: column; font-weight: 600;">
             Suit Size:
@@ -242,7 +217,9 @@
             <input type="range" id="rankSizeSlider" min="55" max="80" value="65" style="width: 100%;">
           </label>
         </div>
-        <div style="display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start;">
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-start;">
           <div>
             <div style="font-weight:600;margin-bottom:6px;">Your hand &amp; the piles</div>
             <div style="display:flex;gap:16px;">

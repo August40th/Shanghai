@@ -135,6 +135,23 @@ header .title::after {
 }
 
 .player-slot.inactive {
+  display: none;
+}
+
+/* Name validation (Players tab) */
+.players-msg {
+  min-height: 1.3em;
+  color: #ff8a80;
+  font-weight: 700;
+}
+
+.player-name-input.invalid,
+#humanNameInput.invalid {
+  border-bottom: 2px solid #ff5252 !important;
+  background: rgba(255, 82, 82, 0.18) !important;
+}
+
+#humanNameInput:disabled {
   opacity: .4;
 }
 

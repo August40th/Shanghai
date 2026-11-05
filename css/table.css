@@ -676,3 +676,27 @@ body, html {
   text-overflow: ellipsis;
   font-size: 11px;
 }
+
+
+/* ── Touch support ─────────────────────────────────────────────────────────── */
+html, body {
+  overscroll-behavior: none;            /* no pull-to-refresh / rubber-banding */
+  touch-action: manipulation;           /* no double-tap zoom */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A finger that starts on a draggable card drags the card instead of panning the page. */
+.card[draggable="true"] {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: element;
+}
+
+.card.touch-dragging { opacity: 0.35; }
+
+.touch-drag-ghost {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  opacity: 0.97;
+}
