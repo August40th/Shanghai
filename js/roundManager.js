@@ -120,6 +120,10 @@
   // Entry point called from table.html with the player names from localStorage.
 
   async function initTable(playerNames) {
+    _syncViewport();
+    window.addEventListener('resize', () => { _syncViewport(); layoutPlayers(true); });
+    window.addEventListener('orientationchange', () => setTimeout(() => { _syncViewport(); layoutPlayers(true); }, 250));
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { _syncViewport(); layoutPlayers(true); });
     tableContainer    = document.getElementById('table-container');
     drawPileDiv       = document.getElementById('drawPile');
     discardPileDiv    = document.getElementById('discardPile');
@@ -254,7 +258,13 @@
       setTimeout(() => window.aiEngine.executeAITurn(startIdx, aiData.difficulties[startIdx]), 500);
     }
 
-    window.addEventListener('resize', () => { layoutPlayers(true); });
+  }
+
+  // Mobile browsers report 100vh as the height WITH the address bar hidden, so anything
+  // pinned to the bottom ends up off-screen.  The table is sized from the real visible height.
+  function _syncViewport() {
+    const h = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight);
+    document.documentElement.style.setProperty('--app-h', h + 'px');
   }
 
   // Auto-decline is switched off at the start of every round (you must opt in again).
@@ -1214,14 +1224,15 @@
   const SEAT_W    = 400;   // opponent seat width; must match --player-width / --contract-width in table.css
   const VIEW_W    = 560;   // your seat is wider (hand + staging area)
   const VIEW_BOOST = 1.15; // ...and drawn this much larger than opponents (its hand cards are larger too)
-  const SEAT_GAP  = 9;     // panel -> contract gap
-  const CELL_PAD  = 12;    // breathing room between neighbouring seats
+  let   SEAT_GAP  = 9;     // panel -> contract gap          (tightened on short screens, see layoutPlayers)
+  let   CELL_PAD  = 12;    // breathing room between neighbouring seats (same)
+  const SHORT_SCREEN_H = 480;   // px: at or below this height the table uses the tight 'short-screen' spacing
   const MIN_SCALE = 0.1;
   const MAX_SCALE = 1.15;
   const PILE_SPAN = 280;   // two 120px piles + 40px gap
   const PILE_H    = 195;   // pile height + "PLAYABLE" label
-  const LOG_H_REG = 46;    // room under the piles for the two-line "recent log" (regular games only)
-  const LOG_STRIP = 44;    // strip kept free along the top while the Game Log is in its home corner    // room reserved under the piles for the collapsed Game Log tab
+  let   LOG_H_REG = 46;    // room under the piles for the two-line "recent log" (regular games only)
+  let   LOG_STRIP = 44;    // strip kept free along the top while the Game Log is in its home corner    // room reserved under the piles for the collapsed Game Log tab
 
   let _stickyScale   = null;   // scale only shrinks within a round (no jumping around)
   let _centre        = null;   // { x, y, ps } free centre of the table, set by layoutPlayers
@@ -1263,7 +1274,7 @@
 
     // The two most recent log entries sit just under the piles, above your seat.
     if (_recentEl) {
-      const w = Math.max(240, Math.min(560, (_centre ? _centre.w : cw) - 16));
+      const w = Math.max(document.documentElement.classList.contains('short-screen') ? 120 : 240, Math.min(560, (_centre ? _centre.w : cw) - 16));
       _recentEl.style.width = `${w}px`;
       _recentEl.style.left  = `${centerX - w / 2}px`;
       _recentEl.style.top   = `${centerY + (pileH / 2) * ps + 8}px`;
@@ -1330,6 +1341,11 @@
     const freeW = W - (l ? cw : 0) - (r ? cw : 0);
     const freeH = H - topH - vh;
     const ps = Math.max(0.5, Math.min(1, s));
+    if (g.sbs) {
+      // Short, wide screen: the piles sit beside your seat, so you can use the full height.
+      const bandH = H - topH;
+      return vw + PILE_SPAN * ps + 16 <= freeW && vh <= bandH && PILE_H * ps + _logH() + 8 <= bandH;
+    }
     return vw <= freeW && freeW >= PILE_SPAN * ps + 20 && freeH >= PILE_H * ps + _logH() + 20;
   }
 
@@ -1353,6 +1369,13 @@
   // Pass reset=true (resize) to let the scale grow again.
   function layoutPlayers(reset = false) {
     if (!tableContainer || !getState().players.length) return;
+    // Short screens (a phone held sideways): tighten the gaps so the cards can be bigger.
+    const compact = tableContainer.clientHeight <= SHORT_SCREEN_H;
+    SEAT_GAP  = compact ? 3  : 9;
+    CELL_PAD  = compact ? 4  : 12;
+    LOG_H_REG = compact ? 26 : 46;
+    LOG_STRIP = compact ? 30 : 44;
+    document.documentElement.classList.toggle('short-screen', compact);
     const { players } = getState();
     const N = players.length;
     // While the Game Log sits in its home spot (top-left) keep a strip free for it.
@@ -1384,18 +1407,21 @@
     const cellH  = oppSeatH + CELL_PAD;
 
     // Pick (l, t, r): >=1 on each side when there are 2+ opponents.
+    // On a short, wide screen also try 'side-by-side' (piles beside your seat) and keep the bigger scale.
     let best = null;
-    for (let l = (M >= 2 ? 1 : 0); l <= M; l++)
-      for (let r = (M >= 2 ? 1 : 0); r <= M - l; r++) {
-        const t = M - l - r;
-        const g = { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r };
-        const sc = _bestScale(g);
-        if (!sc) continue;
-        const score = sc - 0.01 * Math.abs(l - r);
-        if (!best || score > best.score) best = { t, l, r, s: sc, score };
-      }
-    if (!best) best = { t: M, l: 0, r: 0, s: MIN_SCALE };
-    const { t, l, r } = best;
+    const modes = (compact && hasV && W > H * 1.5) ? [false, true] : [false];
+    for (const sbs of modes)
+      for (let l = (M >= 2 ? 1 : 0); l <= M; l++)
+        for (let r = (M >= 2 ? 1 : 0); r <= M - l; r++) {
+          const t = M - l - r;
+          const g = { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r, sbs };
+          const sc = _bestScale(g);
+          if (!sc) continue;
+          const score = sc - 0.01 * Math.abs(l - r);
+          if (!best || score > best.score) best = { t, l, r, s: sc, score, sbs };
+        }
+    if (!best) best = { t: M, l: 0, r: 0, s: MIN_SCALE, sbs: false };
+    const { t, l, r, sbs } = best;
     let s = best.s;
     if (_stickyScale !== null) s = Math.min(s, _stickyScale);
     _stickyScale = s;
@@ -1441,16 +1467,30 @@
     // Viewer: bottom-centre between the side columns; contract above, hand at the very bottom.
     const x0 = l ? cw : 0, x1 = W - (r ? cw : 0);
     const vpad = (CELL_PAD / 2) * sv;
-    if (hasV) place(v, (x0 + x1) / 2 - (VIEW_W * sv) / 2, H - vh + vpad, sv, true, VIEW_W);
+    const psz = Math.max(0.5, Math.min(1, s));
+    if (hasV && sbs) {
+      // Your seat on the left of the middle band, the piles (and recent log) to its right.
+      const pilesW = PILE_SPAN * psz + 16;
+      const gx = (x0 + x1) / 2 - (vw + pilesW) / 2;
+      place(v, gx + vpad, H - vh + vpad, sv, true, VIEW_W);
+      _centre = {
+        x:  gx + vw + pilesW / 2,
+        y:  OFF + topH + (H - topH) / 2 - _logH() / 2,
+        ps: psz,
+        w:  pilesW,
+      };
+    } else {
+      if (hasV) place(v, (x0 + x1) / 2 - (VIEW_W * sv) / 2, H - vh + vpad, sv, true, VIEW_W);
 
-    // Free rectangle in the middle -> piles (+ Game Log tab beneath them).
-    const freeH = H - topH - vh;
-    _centre = {
-      x:  (x0 + x1) / 2,
-      y:  OFF + topH + freeH / 2 - _logH() / 2,
-      ps: Math.max(0.5, Math.min(1, s)),
-      w:  x1 - x0,
-    };
+      // Free rectangle in the middle -> piles (+ Game Log tab beneath them).
+      const freeH = H - topH - vh;
+      _centre = {
+        x:  (x0 + x1) / 2,
+        y:  OFF + topH + freeH / 2 - _logH() / 2,
+        ps: psz,
+        w:  x1 - x0,
+      };
+    }
     layoutPiles();
   }
 

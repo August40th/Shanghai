@@ -21,10 +21,18 @@ body, html {
   user-select: none;
 }
 
+body {
+  position: fixed;                       /* the page itself never scrolls (no address-bar collapse mid-game) */
+  inset: 0;
+  width: 100%;
+}
+
 #table-container {
   position: relative;
   width: 100vw;
-  height: 100vh;
+  height: 100vh;                         /* old browsers */
+  height: 100dvh;                        /* visible height on phones (address bar aware) */
+  height: var(--app-h, 100dvh);          /* set from the real visible height by roundManager.js */
   overflow: visible;
 }
 
@@ -699,4 +707,14 @@ html, body {
 .touch-drag-ghost {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
   opacity: 0.97;
+}
+
+/* Short screens (phone held sideways): the Game Log tab shrinks so it needs less room. */
+html.short-screen #game-log-panel {
+  transform: scale(0.72);
+  transform-origin: top left;
+}
+html.short-screen #recent-log .recent-log-row {
+  font-size: 10px;
+  padding: 1px 6px;
 }

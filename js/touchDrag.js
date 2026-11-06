@@ -61,6 +61,18 @@
 
   function aimPoint(e) { return { x: e.clientX, y: e.clientY - g.lift }; }
 
+  // Seats are scaled with CSS transforms, so a card's layout size (offsetWidth) is not its
+  // on-screen size.  Multiply the scales of all ancestors to get the real factor.
+  function visualScale(el) {
+    let k = 1;
+    for (let n = el.parentElement; n && n !== document.documentElement; n = n.parentElement) {
+      const t = getComputedStyle(n).transform;
+      if (t && t !== 'none') { const m = new DOMMatrix(t); k *= Math.hypot(m.a, m.b) || 1; }
+    }
+    return k;
+  }
+
+  // The ghost keeps the card's design size and is shrunk/grown with a transform about its centre.
   function placeGhost(x, y) {
     g.ghost.style.left = (x - g.w / 2) + 'px';
     g.ghost.style.top  = (y - g.h / 2) + 'px';
@@ -78,7 +90,7 @@
     const card = e.target.closest && e.target.closest('.card[draggable="true"]');
     if (!card) return;
     g = { id: e.pointerId, src: card, x0: e.clientX, y0: e.clientY, started: false,
-          zone: null, el: null, dt: null, ghost: null, w: 0, h: 0, lift: 0 };
+          zone: null, el: null, dt: null, ghost: null, w: 0, h: 0, k: 1, lift: 0 };
   }, true);
 
   function begin() {
@@ -87,12 +99,13 @@
     if (ev.defaultPrevented) return false;                    // e.g. not allowed right now
     g.w = g.src.offsetWidth  || g.src.getBoundingClientRect().width;
     g.h = g.src.offsetHeight || g.src.getBoundingClientRect().height;
-    g.lift = Math.min(LIFT_MAX, g.h * 0.4);
+    g.k = visualScale(g.src);                                 // on-screen size = layout size * g.k
+    g.lift = Math.min(LIFT_MAX, g.h * g.k * 0.4);
     const ghost = g.src.cloneNode(true);
     ghost.removeAttribute('draggable');
     ghost.classList.add('touch-drag-ghost');
     ghost.style.cssText += `;position:fixed;left:0;top:0;width:${g.w}px;height:${g.h}px;margin:0;` +
-      'z-index:100000;pointer-events:none;transform:scale(1.1) rotate(4deg);transform-origin:50% 50%;';
+      `z-index:100000;pointer-events:none;transform:scale(${g.k * 1.1}) rotate(4deg);transform-origin:50% 50%;`;
     document.body.appendChild(ghost);
     g.ghost = ghost;
     g.src.classList.add('touch-dragging');
