@@ -62,7 +62,7 @@ function updateSummary() {
   
   let shanghaiBonus = "";
   if (softShanghai) shanghaiBonus += "+25 Soft";
-  if (hardShanghai) shanghaiBonus += (shanghaiBonus?", ":"") + "+50 Shanghai";
+  if (hardShanghai) shanghaiBonus += (shanghaiBonus?", ":"") + (finalShanghai ? "+50 Shanghai (rounds 1–6)" : "+50 Shanghai");
   if (finalShanghai) shanghaiBonus += (shanghaiBonus?", ":"") + "+100 Final";
   if (shanghaiBonus) qsummary += `● Shanghai bonuses: ${shanghaiBonus}`;
   
@@ -344,8 +344,8 @@ function buildDetailedPages() {
   // 6. Scoring
   let sc = '<p>Aces=15, Face cards=10, Number cards=face value' + (r.wilds ? ', Wilds=20' : '') + '</p>';
   if (r.soft)  sc += '<p><strong>Soft Shanghai (+25):</strong> the first player to lay down goes out on a later turn, before any other player has laid down. Every other player scores +25.</p>';
-  if (r.hard)  sc += '<p><strong>Shanghai (+50, rounds 1–6):</strong> the first player to lay down also goes out on that same turn. Every other player scores +50.</p>';
-  if (r.final) sc += '<p><strong>Final Shanghai (+100, round 7):</strong> the same, in round 7. Every other player scores +100.</p>';
+  if (r.hard)  sc += '<p><strong>Shanghai (+50, ' + (r.final ? 'rounds 1–6' : 'every round') + '):</strong> the first player to lay down also goes out on that same turn. Every other player scores +50.</p>';
+  if (r.final) sc += '<p><strong>Final Shanghai (+100, round 7):</strong> the same, in round 7' + (r.hard ? ' (replaces the +50 there)' : '') + '. Every other player scores +100.</p>';
   pages.push({ id: 'scoring', title: 'Scoring', html: sc });
 
   return pages;

@@ -132,7 +132,7 @@
         // hardShanghai is off for rounds 1–6.
         if (isFinalRound && rules.finalShanghai && hardWindow) {
           heldVal += 100;
-        } else if (!isFinalRound && rules.hardShanghai && hardWindow) {
+        } else if (rules.hardShanghai && hardWindow) {   // rounds 1-7; round 7 only when Final Shanghai is off
           heldVal += 50;
         } else if (rules.softShanghai && softWindow) {
           heldVal += 25;

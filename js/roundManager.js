@@ -123,7 +123,6 @@
     _syncViewport();
     window.addEventListener('resize', () => { _syncViewport(); layoutPlayers(true); });
     window.addEventListener('orientationchange', () => setTimeout(() => { _syncViewport(); layoutPlayers(true); }, 250));
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { _syncViewport(); layoutPlayers(true); });
     tableContainer    = document.getElementById('table-container');
     drawPileDiv       = document.getElementById('drawPile');
     discardPileDiv    = document.getElementById('discardPile');
@@ -263,7 +262,9 @@
   // Mobile browsers report 100vh as the height WITH the address bar hidden, so anything
   // pinned to the bottom ends up off-screen.  The table is sized from the real visible height.
   function _syncViewport() {
-    const h = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight);
+    // innerHeight is the layout viewport: it follows the address bar but NOT pinch-zoom
+    // (visualViewport.height shrinks when you zoom in, which would re-layout the table).
+    const h = Math.round(window.innerHeight);
     document.documentElement.style.setProperty('--app-h', h + 'px');
   }
 
@@ -1226,12 +1227,15 @@
   const VIEW_BOOST = 1.15; // ...and drawn this much larger than opponents (its hand cards are larger too)
   let   SEAT_GAP  = 9;     // panel -> contract gap          (tightened on short screens, see layoutPlayers)
   let   CELL_PAD  = 12;    // breathing room between neighbouring seats (same)
+  const VIEW_CONTRACT_ZOOM = 1.3;   // short screens: your staging area is drawn this much larger
   const SHORT_SCREEN_H = 480;   // px: at or below this height the table uses the tight 'short-screen' spacing
   const MIN_SCALE = 0.1;
   const MAX_SCALE = 1.15;
   const PILE_SPAN = 280;   // two 120px piles + 40px gap
   const PILE_H    = 195;   // pile height + "PLAYABLE" label
   let   LOG_H_REG = 46;    // room under the piles for the two-line "recent log" (regular games only)
+  let   PILE_PS_MIN = 0.5; // smallest pile scale (smaller on short screens)
+  let   PILE_PAD    = 20;  // free room kept around the piles
   let   LOG_STRIP = 44;    // strip kept free along the top while the Game Log is in its home corner    // room reserved under the piles for the collapsed Game Log tab
 
   let _stickyScale   = null;   // scale only shrinks within a round (no jumping around)
@@ -1273,7 +1277,14 @@
     drawPileDiv.style.userSelect  = 'none';
 
     // The two most recent log entries sit just under the piles, above your seat.
-    if (_recentEl) {
+    if (_recentEl && _centre && _centre.logBeside) {
+      // Short screen, piles above your seat: the recent log sits to the right of the discard pile.
+      const left = centerX + spacing / 2 + (pileW * ps) / 2 + 10;
+      const w = Math.max(100, Math.min(260, (_centre.right || cw) - left - 8));
+      _recentEl.style.width = `${w}px`;
+      _recentEl.style.left  = `${left}px`;
+      _recentEl.style.top   = `${centerY - (pileH * ps) / 2}px`;
+    } else if (_recentEl) {
       const w = Math.max(document.documentElement.classList.contains('short-screen') ? 120 : 240, Math.min(560, (_centre ? _centre.w : cw) - 16));
       _recentEl.style.width = `${w}px`;
       _recentEl.style.left  = `${centerX - w / 2}px`;
@@ -1329,7 +1340,9 @@
   // Does this arrangement fit at opponent scale s?
   //   t = opponents across the top, l / r = down the left / right sides,
   //   viewer = you, bottom centre between the side columns, drawn VIEW_BOOST x larger.
-  const _logH = () => (window.gameDebug ? 0 : LOG_H_REG);
+  // Room the recent-log needs under the piles.  On a short screen with the piles above your seat
+  // the log sits beside the piles instead, so it costs no height.
+  const _logH = (g) => (window.gameDebug || (g && g.compact && !g.sbs)) ? 0 : LOG_H_REG;
 
   function _fits(s, g) {
     const { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r } = g;
@@ -1340,13 +1353,13 @@
     if (l * ch > H - topH || r * ch > H - topH) return false;
     const freeW = W - (l ? cw : 0) - (r ? cw : 0);
     const freeH = H - topH - vh;
-    const ps = Math.max(0.5, Math.min(1, s));
+    const ps = Math.max(PILE_PS_MIN, Math.min(1, s));
     if (g.sbs) {
       // Short, wide screen: the piles sit beside your seat, so you can use the full height.
       const bandH = H - topH;
-      return vw + PILE_SPAN * ps + 16 <= freeW && vh <= bandH && PILE_H * ps + _logH() + 8 <= bandH;
+      return vw + PILE_SPAN * ps + 16 <= freeW && vh <= bandH && PILE_H * ps + _logH(g) + 8 <= bandH;
     }
-    return vw <= freeW && freeW >= PILE_SPAN * ps + 20 && freeH >= PILE_H * ps + _logH() + 20;
+    return vw <= freeW && freeW >= PILE_SPAN * ps + PILE_PAD && freeH >= PILE_H * ps + _logH(g) + PILE_PAD;
   }
 
   function _bestScale(g) {
@@ -1375,6 +1388,8 @@
     CELL_PAD  = compact ? 4  : 12;
     LOG_H_REG = compact ? 26 : 46;
     LOG_STRIP = compact ? 30 : 44;
+    PILE_PS_MIN = compact ? 0.4 : 0.5;
+    PILE_PAD    = compact ? 6   : 20;
     document.documentElement.classList.toggle('short-screen', compact);
     const { players } = getState();
     const N = players.length;
@@ -1387,6 +1402,9 @@
 
     const v = _viewerIdx();
     const hasV = v >= 0;                   // false in debug mode: no bottom seat at all
+    // On a short screen your own staging area is drawn larger (it is where you build your sets).
+    let czV = VIEW_CONTRACT_ZOOM;
+    const _cz = (i) => (compact && i === v) ? czV : 1;
     const M = hasV ? N - 1 : N;            // opponents
     const order = [];                      // opponents in clockwise turn order from the viewer
     if (hasV) for (let k = 1; k <= M; k++) order.push((v + k) % N);
@@ -1398,10 +1416,10 @@
     players.forEach((_, i) => {
       const pd = document.getElementById(`player-${i}`);
       panelH[i] = pd ? (pd.offsetHeight || 180) : 0;
-      conH[i]   = contracts[i] ? contracts[i].offsetHeight : 0;
+      conH[i]   = contracts[i] ? contracts[i].offsetHeight * _cz(i) : 0;
       if (i !== v) oppSeatH = Math.max(oppSeatH, panelH[i] + SEAT_GAP + conH[i]);
     });
-    const vSeatH = hasV ? panelH[v] + SEAT_GAP + conH[v] + CELL_PAD : 0;
+    let   vSeatH = hasV ? panelH[v] + SEAT_GAP + conH[v] + CELL_PAD : 0;
     const vSeatW = hasV ? VIEW_W + CELL_PAD : 0;
     const cellW  = SEAT_W + CELL_PAD;
     const cellH  = oppSeatH + CELL_PAD;
@@ -1409,15 +1427,16 @@
     // Pick (l, t, r): >=1 on each side when there are 2+ opponents.
     // On a short, wide screen also try 'side-by-side' (piles beside your seat) and keep the bigger scale.
     let best = null;
-    const modes = (compact && hasV && W > H * 1.5) ? [false, true] : [false];
+    const modes = (compact && hasV && W > H * 1.5 && !window.__noSbs) ? [false, true] : [false];
     for (const sbs of modes)
       for (let l = (M >= 2 ? 1 : 0); l <= M; l++)
         for (let r = (M >= 2 ? 1 : 0); r <= M - l; r++) {
           const t = M - l - r;
-          const g = { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r, sbs };
+          const g = { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r, sbs, compact };
           const sc = _bestScale(g);
           if (!sc) continue;
-          const score = sc - 0.01 * Math.abs(l - r);
+          // Piles above your seat (centred) are preferred; beside it only if that is a lot bigger.
+          const score = sc * (sbs ? 0.8 : 1) - 0.01 * Math.abs(l - r);
           if (!best || score > best.score) best = { t, l, r, s: sc, score, sbs };
         }
     if (!best) best = { t: M, l: 0, r: 0, s: MIN_SCALE, sbs: false };
@@ -1427,8 +1446,23 @@
     _stickyScale = s;
 
     const cw = cellW * s, ch = cellH * s;
-    const sv = s * VIEW_BOOST, vw = vSeatW * sv, vh = vSeatH * sv;
+    const sv = s * VIEW_BOOST, vw = vSeatW * sv;
+    let vh = vSeatH * sv;
     const topH = t ? ch : 0;
+    const psz0 = Math.max(PILE_PS_MIN, Math.min(1, s));
+    // Short screen with spare height (the scale was limited by width): spend it on a bigger
+    // staging area for you, so the sets you build are easier to read.
+    if (compact && hasV && contracts[v] && contracts[v].offsetHeight) {
+      const base = contracts[v].offsetHeight;
+      const pileNeed = sbs ? 0 : PILE_H * psz0 + _logH({ compact, sbs }) + PILE_PAD;   // stacked: the piles sit above you
+      const room = (H - topH) - vh - pileNeed;
+      if (room > 4) {
+        czV = Math.max(VIEW_CONTRACT_ZOOM, Math.min(2.2, czV + (room * 0.95) / (base * sv)));
+        conH[v] = base * czV;
+        vSeatH  = panelH[v] + SEAT_GAP + conH[v] + CELL_PAD;
+        vh = vSeatH * sv;
+      }
+    }
     const colH = H - topH;                 // side columns run down to the screen bottom
 
     // Opponent slots, clockwise from the viewer's left: left column (bottom->top),
@@ -1452,8 +1486,9 @@
       if (cd) {
         cd.style.left = '0px'; cd.style.top = '0px'; cd.style.transformOrigin = '0 0';
         // Centre the (content-sized) staging area within the seat's width.
-        const cx = x + Math.max(0, (seatW - cd.offsetWidth)) * sc / 2;
-        cd.style.transform = `translate(${cx}px, ${cTop}px) scale(${sc})`;
+        const cz = _cz(i);
+        const cx = x + Math.max(0, (seatW - cd.offsetWidth * cz)) * sc / 2;
+        cd.style.transform = `translate(${cx}px, ${cTop}px) scale(${sc * cz})`;
       }
     };
 
@@ -1467,7 +1502,8 @@
     // Viewer: bottom-centre between the side columns; contract above, hand at the very bottom.
     const x0 = l ? cw : 0, x1 = W - (r ? cw : 0);
     const vpad = (CELL_PAD / 2) * sv;
-    const psz = Math.max(0.5, Math.min(1, s));
+    const psz = Math.max(PILE_PS_MIN, Math.min(1, s));
+    const gm = { compact, sbs };
     if (hasV && sbs) {
       // Your seat on the left of the middle band, the piles (and recent log) to its right.
       const pilesW = PILE_SPAN * psz + 16;
@@ -1475,7 +1511,7 @@
       place(v, gx + vpad, H - vh + vpad, sv, true, VIEW_W);
       _centre = {
         x:  gx + vw + pilesW / 2,
-        y:  OFF + topH + (H - topH) / 2 - _logH() / 2,
+        y:  OFF + topH + (H - topH) / 2 - _logH(gm) / 2,
         ps: psz,
         w:  pilesW,
       };
@@ -1486,9 +1522,11 @@
       const freeH = H - topH - vh;
       _centre = {
         x:  (x0 + x1) / 2,
-        y:  OFF + topH + freeH / 2 - _logH() / 2,
+        y:  OFF + topH + freeH / 2 - _logH(gm) / 2,
         ps: psz,
         w:  x1 - x0,
+        right: x1,
+        logBeside: compact,
       };
     }
     layoutPiles();

@@ -718,3 +718,35 @@ html.short-screen #recent-log .recent-log-row {
   font-size: 10px;
   padding: 1px 6px;
 }
+
+/* Full-screen toggle (touch devices only; created by touchDrag.js) */
+#fs-btn {
+  position: fixed;
+  top: 4px;
+  right: 4px;
+  width: 34px;
+  height: 34px;
+  z-index: 20000;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.75;
+}
+
+/* Tap-to-select (touch): the chosen card lifts and glows */
+.card.touch-selected {
+  outline: 3px solid #ffeb3b; outline-offset: -2px;
+  box-shadow: 0 0 12px 4px rgba(255,235,59,.9);
+  filter: brightness(1.08);
+}
+
+/* Bigger buttons on the viewer's seat for fingers (design px; the seat is scaled to fit) */
+@media (pointer: coarse) {
+  .player.is-viewer .lay-down-btn { padding: 12px 0; font-size: 16px; }
+  .player.is-viewer .buy-controls .buy-clock-btn { min-height: 40px; font-size: 14px; padding: 4px 8px; }
+  .player.is-viewer .swap-undo-btn { min-height: 40px; }
+}

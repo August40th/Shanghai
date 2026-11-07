@@ -133,7 +133,11 @@
 
   function finish(e, cancelled) {
     if (!g || e.pointerId !== g.id) return;
-    if (!g.started) { g = null; return; }                       // it was only a tap
+    if (!g.started) {                                           // it was only a tap
+      const card = g.src; g = null;
+      tapCard(card, e);
+      return;
+    }
     const { x, y } = aimPoint(e);
     const { el, zone } = hit(x, y);
     if (!cancelled && zone) {
@@ -161,5 +165,103 @@
     if (Date.now() < suppressClickUntil) { e.stopPropagation(); e.preventDefault(); }
   }, true);
 
-  window.touchDrag = { isDragging: () => !!(g && g.started) };
+
+  // ── Tap to select, tap to place ────────────────────────────────────────────
+  // A second way to move cards on a touch screen: tap a card (it lifts and glows), then tap
+  // the staging area, your hand or the discard pile where it should go.  This reuses the same
+  // drop handlers as dragging, so every rule is enforced in one place.  Tap the card again,
+  // or tap empty table, to cancel.
+  let sel = null;                       // the selected card element
+  let tapDown = null;                   // where the current touch started
+
+  function clearSel() { if (sel) sel.classList.remove('touch-selected'); sel = null; }
+
+  function tapCard(card, e) {
+    if (sel === card) { clearSel(); return; }
+    if (sel && sel.isConnected) {
+      // Tapping a card that sits in a DIFFERENT zone (e.g. a card already staged) places the
+      // selected card there; tapping another card in the same zone just changes the selection.
+      const a = hit(e.clientX, e.clientY).zone, b = hit(sel.getBoundingClientRect().x + 2, sel.getBoundingClientRect().y + 2).zone;
+      if (a && a !== b && dropSelected(e.clientX, e.clientY)) { suppressClickUntil = Date.now() + 350; return; }
+    }
+    clearSel();
+    sel = card;
+    card.classList.add('touch-selected');
+  }
+
+  // Place the selected card on whatever zone is at (x, y). Returns true if a drop was attempted.
+  function dropSelected(x, y) {
+    if (!sel || !sel.isConnected) { clearSel(); return false; }
+    const { el, zone } = hit(x, y);
+    if (!zone) return false;
+    const card = sel;
+    g = { dt: makeDataTransfer() };
+    try {
+      const ds = fire('dragstart', card, x, y);
+      if (!ds.defaultPrevented) {
+        fire('dragenter', el, x, y);
+        fire('dragover', el, x, y);
+        fire('drop', el, x, y);
+      }
+      const end = new MouseEvent('dragend', { bubbles: true, cancelable: false, clientX: x, clientY: y, view: window });
+      end.dataTransfer = g.dt;
+      (card.isConnected ? card : document.body).dispatchEvent(end);
+    } finally { g = null; }
+    clearSel();                         // the table re-renders after a move; start fresh
+    return true;
+  }
+
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' || !e.isPrimary) return;
+    tapDown = { x: e.clientX, y: e.clientY, t: Date.now(),
+                onCard: !!(e.target.closest && e.target.closest('.card[draggable="true"]')) };
+  }, true);
+
+  window.addEventListener('pointerup', e => {
+    if (e.pointerType === 'mouse' || !sel || !tapDown) return;
+    const d = tapDown; tapDown = null;
+    if (g) return;                                           // a real drag just ended
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > MOVE_THRESHOLD || Date.now() - d.t > 700) return;
+    if (d.onCard) return;                                    // card taps are handled in finish()
+    // Buttons (Lay Down, Buy ...) keep working; selection is just dropped.
+    if (e.target.closest && e.target.closest('button, input, .game-log, #game-log-panel')) { clearSel(); return; }
+    if (dropSelected(e.clientX, e.clientY)) suppressClickUntil = Date.now() + 350;
+    else clearSel();
+  }, true);
+
+  // The selection must not outlive a re-render of its card.
+  setInterval(() => { if (sel && !sel.isConnected) sel = null; }, 500);
+
+  // ── Full-screen button (touch devices) ─────────────────────────────────────
+  // A phone held sideways has only ~250 px of height once the status bar and address bar
+  // are showing.  Full screen hides both and gives the table about 40% more room.
+  function initFullscreenButton() {
+    const root = document.documentElement;
+    const canFs = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+    if (!canFs || !window.matchMedia('(pointer: coarse)').matches) return;
+    const btn = document.createElement('button');
+    btn.id = 'fs-btn';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Toggle full screen');
+    const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const sync = () => { btn.textContent = isFs() ? '✕' : '⛶'; btn.title = isFs() ? 'Exit full screen' : 'Full screen'; };
+    btn.addEventListener('click', async () => {
+      try {
+        if (isFs()) {
+          await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else {
+          await (root.requestFullscreen || root.webkitRequestFullscreen).call(root, { navigationUI: 'hide' });
+          if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+        }
+      } catch (e) { /* the browser refused (e.g. iPhone Safari): nothing to do */ }
+    });
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    sync();
+    document.body.appendChild(btn);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initFullscreenButton);
+  else initFullscreenButton();
+
+  window.touchDrag = { isDragging: () => !!(g && g.started), hasSelection: () => !!sel };
 })();
