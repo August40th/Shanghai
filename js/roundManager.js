@@ -1143,7 +1143,7 @@
       contractDiv.id        = `contract-${i}`;
       // Fixed seat width; sub-areas wrap inside it (see table.css).
       const maxW = i === _viewerIdx() ? VIEW_W : SEAT_W;
-      contractDiv.style.cssText = `display:block;white-space:normal;max-width:${maxW}px;`;
+      contractDiv.style.cssText = `display:block;white-space:normal;width:${maxW}px;`;
       contractDiv.dataset.maxw = String(maxW);
       contractsContainer.appendChild(contractDiv);
       contracts[i] = contractDiv;
@@ -1157,7 +1157,7 @@
     window.aiInfo?.reset();
     const { backColors } = getState();
     const labels  = CONTRACT_SUB_AREAS[roundNum] || [];
-    _stickyScale = null;     // new round: allow the scale to be recomputed from scratch
+    _growNow = true;         // new round: the table may grow right away (smoothly)
     _scheduleLayout();
     contracts.forEach((contractDiv, i) => {
       if (!contractDiv) return;
@@ -1227,7 +1227,6 @@
   const VIEW_BOOST = 1.15; // ...and drawn this much larger than opponents (its hand cards are larger too)
   let   SEAT_GAP  = 9;     // panel -> contract gap          (tightened on short screens, see layoutPlayers)
   let   CELL_PAD  = 12;    // breathing room between neighbouring seats (same)
-  const VIEW_CONTRACT_ZOOM = 1.3;   // short screens: your staging area is drawn this much larger
   const SHORT_SCREEN_H = 480;   // px: at or below this height the table uses the tight 'short-screen' spacing
   const MIN_SCALE = 0.1;
   const MAX_SCALE = 1.15;
@@ -1238,10 +1237,20 @@
   let   PILE_PAD    = 20;  // free room kept around the piles
   let   LOG_STRIP = 44;    // strip kept free along the top while the Game Log is in its home corner    // room reserved under the piles for the collapsed Game Log tab
 
-  let _stickyScale   = null;   // scale only shrinks within a round (no jumping around)
+  // Table scale (one factor for the whole table).  It follows what fits, but calmly:
+  //  - too big -> shrink at once (otherwise things overlap), with a little extra headroom so
+  //    the next small change does not shrink it again;
+  //  - room to spare -> grow only after it has stayed that way for GROW_DELAY, and only if
+  //    the gain is worth it (GROW_RATIO);
+  //  - a new round may grow immediately; a resize / rotation re-fits at once.
+  // Every change is animated by a CSS transition (see .anim in table.css).
+  const SHRINK_HEADROOM = 0.94, GROW_RATIO = 1.12, GROW_FACTOR = 0.97, GROW_DELAY = 2500;
+  let _curScale  = null;
+  let _growTimer = null, _growOK = false, _growNow = false, _snap = false;
   let _centre        = null;   // { x, y, ps } free centre of the table, set by layoutPlayers
   let _layoutObserver = null;
   let _layoutQueued  = false;
+  let _animTimer     = null;
 
   function _scheduleLayout() {
     if (_layoutQueued) return;
@@ -1331,6 +1340,10 @@
 
   // Which seat is "you" (bottom of the screen): the first human. -1 = nobody (debug mode,
   // computers only): there is no bottom seat and every seat is laid out as an opponent.
+  // ─── Magnifier support (the lens itself lives in magnifier.js) ───────────
+  let _viewSeat  = null;   // your seat's screen rect: the magnify buttons sit just outside its right edge
+  let _obstacles = [];     // rects the buttons must not sit on
+
   function _viewerIdx() {
     const flags = window.aiData?.isAI;
     if (Array.isArray(flags)) { const i = flags.findIndex(f => !f); return i; }
@@ -1347,7 +1360,7 @@
   function _fits(s, g) {
     const { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r } = g;
     const cw = cellW * s, ch = cellH * s;
-    const sv = s * VIEW_BOOST, vw = vSeatW * sv, vh = vSeatH * sv;
+    const sv = s * VIEW_BOOST, vw = vSeatW * sv + (g.magPx || 0), vh = vSeatH * sv;   // + room for the magnify buttons
     if (t * cw > W) return false;
     const topH = t ? ch : 0;
     if (l * ch > H - topH || r * ch > H - topH) return false;
@@ -1398,13 +1411,16 @@
     const W = tableContainer.clientWidth;
     const H = tableContainer.clientHeight - OFF;
     if (!W || H <= 0) return;
-    if (reset) _stickyScale = null;
+    if (reset) {                           // resize / rotation: re-fit at once, without animating
+      _snap = true;
+      tableContainer.classList.remove('anim');
+      clearTimeout(_animTimer);
+      _animTimer = setTimeout(() => tableContainer && tableContainer.classList.add('anim'), 250);
+    }
 
     const v = _viewerIdx();
     const hasV = v >= 0;                   // false in debug mode: no bottom seat at all
-    // On a short screen your own staging area is drawn larger (it is where you build your sets).
-    let czV = VIEW_CONTRACT_ZOOM;
-    const _cz = (i) => (compact && i === v) ? czV : 1;
+    if (!hasV) _viewSeat = null;
     const M = hasV ? N - 1 : N;            // opponents
     const order = [];                      // opponents in clockwise turn order from the viewer
     if (hasV) for (let k = 1; k <= M; k++) order.push((v + k) % N);
@@ -1416,7 +1432,7 @@
     players.forEach((_, i) => {
       const pd = document.getElementById(`player-${i}`);
       panelH[i] = pd ? (pd.offsetHeight || 180) : 0;
-      conH[i]   = contracts[i] ? contracts[i].offsetHeight * _cz(i) : 0;
+      conH[i]   = contracts[i] ? contracts[i].offsetHeight : 0;
       if (i !== v) oppSeatH = Math.max(oppSeatH, panelH[i] + SEAT_GAP + conH[i]);
     });
     let   vSeatH = hasV ? panelH[v] + SEAT_GAP + conH[v] + CELL_PAD : 0;
@@ -1426,13 +1442,14 @@
 
     // Pick (l, t, r): >=1 on each side when there are 2+ opponents.
     // On a short, wide screen also try 'side-by-side' (piles beside your seat) and keep the bigger scale.
+    const magPx = hasV ? (window.magnifier ? window.magnifier.RESERVE_PX : 0) : 0;   // screen px reserved beside your seat for the magnify buttons
     let best = null;
     const modes = (compact && hasV && W > H * 1.5 && !window.__noSbs) ? [false, true] : [false];
     for (const sbs of modes)
       for (let l = (M >= 2 ? 1 : 0); l <= M; l++)
         for (let r = (M >= 2 ? 1 : 0); r <= M - l; r++) {
           const t = M - l - r;
-          const g = { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r, sbs, compact };
+          const g = { W, H, cellW, cellH, vSeatW, vSeatH, t, l, r, sbs, compact, magPx };
           const sc = _bestScale(g);
           if (!sc) continue;
           // Piles above your seat (centred) are preferred; beside it only if that is a lot bigger.
@@ -1442,27 +1459,30 @@
     if (!best) best = { t: M, l: 0, r: 0, s: MIN_SCALE, sbs: false };
     const { t, l, r, sbs } = best;
     let s = best.s;
-    if (_stickyScale !== null) s = Math.min(s, _stickyScale);
-    _stickyScale = s;
+    if (_curScale === null || _snap) {
+      _curScale = s; _snap = false;
+      clearTimeout(_growTimer); _growTimer = null;
+    } else if (s < _curScale) {                         // too big: shrink now, with headroom
+      _curScale = s * SHRINK_HEADROOM;
+      clearTimeout(_growTimer); _growTimer = null;
+    } else if (s > _curScale * GROW_RATIO) {            // room to spare
+      if (_growNow || _growOK) {
+        _curScale = _growNow ? s : s * GROW_FACTOR;
+        _growNow = _growOK = false;
+        clearTimeout(_growTimer); _growTimer = null;
+      } else if (!_growTimer) {                         // ...but only if it lasts
+        _growTimer = setTimeout(() => { _growTimer = null; _growOK = true; layoutPlayers(false); }, GROW_DELAY);
+      }
+    } else {
+      clearTimeout(_growTimer); _growTimer = null;
+    }
+    _growNow = false;
+    s = _curScale;
 
     const cw = cellW * s, ch = cellH * s;
-    const sv = s * VIEW_BOOST, vw = vSeatW * sv;
+    const sv = s * VIEW_BOOST, vw = vSeatW * sv + magPx;   // vw includes the buttons' strip
     let vh = vSeatH * sv;
     const topH = t ? ch : 0;
-    const psz0 = Math.max(PILE_PS_MIN, Math.min(1, s));
-    // Short screen with spare height (the scale was limited by width): spend it on a bigger
-    // staging area for you, so the sets you build are easier to read.
-    if (compact && hasV && contracts[v] && contracts[v].offsetHeight) {
-      const base = contracts[v].offsetHeight;
-      const pileNeed = sbs ? 0 : PILE_H * psz0 + _logH({ compact, sbs }) + PILE_PAD;   // stacked: the piles sit above you
-      const room = (H - topH) - vh - pileNeed;
-      if (room > 4) {
-        czV = Math.max(VIEW_CONTRACT_ZOOM, Math.min(2.2, czV + (room * 0.95) / (base * sv)));
-        conH[v] = base * czV;
-        vSeatH  = panelH[v] + SEAT_GAP + conH[v] + CELL_PAD;
-        vh = vSeatH * sv;
-      }
-    }
     const colH = H - topH;                 // side columns run down to the screen bottom
 
     // Opponent slots, clockwise from the viewer's left: left column (bottom->top),
@@ -1483,12 +1503,11 @@
       const cTop = contractFirst ? y : y + (panelH[i] + SEAT_GAP) * sc;
       pd.style.left = '0px'; pd.style.top = '0px'; pd.style.transformOrigin = '0 0';
       pd.style.transform = `translate(${x}px, ${pTop}px) scale(${sc})`;
+      if (i === v) _viewSeat = { x, y: pTop, w: seatW * sc, h: panelH[i] * sc };
       if (cd) {
         cd.style.left = '0px'; cd.style.top = '0px'; cd.style.transformOrigin = '0 0';
-        // Centre the (content-sized) staging area within the seat's width.
-        const cz = _cz(i);
-        const cx = x + Math.max(0, (seatW - cd.offsetWidth * cz)) * sc / 2;
-        cd.style.transform = `translate(${cx}px, ${cTop}px) scale(${sc * cz})`;
+        // The staging area is exactly as wide as its seat (nameplate), so it lines up with it.
+        cd.style.transform = `translate(${x}px, ${cTop}px) scale(${sc})`;
       }
     };
 
@@ -1514,9 +1533,10 @@
         y:  OFF + topH + (H - topH) / 2 - _logH(gm) / 2,
         ps: psz,
         w:  pilesW,
+        sbs: true,
       };
     } else {
-      if (hasV) place(v, (x0 + x1) / 2 - (VIEW_W * sv) / 2, H - vh + vpad, sv, true, VIEW_W);
+      if (hasV) place(v, (x0 + x1) / 2 - (VIEW_W * sv + magPx) / 2, H - vh + vpad, sv, true, VIEW_W);   // seat + buttons centred as a group
 
       // Free rectangle in the middle -> piles (+ Game Log tab beneath them).
       const freeH = H - topH - vh;
@@ -1527,9 +1547,17 @@
         w:  x1 - x0,
         right: x1,
         logBeside: compact,
+        sbs: false,
       };
     }
     layoutPiles();
+
+    // Rects the magnify controls must not sit on: the opponents' seats (and the piles, beside you).
+    _obstacles = order.map((idx, k) => slots[k] && { x: slots[k].x, y: slots[k].y + OFF, w: cw, h: ch }).filter(Boolean);
+    if (sbs && _centre) _obstacles.push({ x: _centre.x - _centre.w / 2, y: OFF + topH, w: _centre.w, h: H - topH });
+    if (window.magnifier) window.magnifier.layout(tableContainer, hasV ? _viewSeat : null, _obstacles);
+    // Animate later size changes (not the very first placement).
+    if (!_animTimer) _animTimer = setTimeout(() => tableContainer && tableContainer.classList.add('anim'), 400);
   }
 
   // ─── Hand view: 'all' (debug, every card face-up) | 'compact' ────────────

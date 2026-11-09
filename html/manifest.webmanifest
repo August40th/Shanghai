@@ -1,0 +1,11 @@
+{
+  "name": "Shanghai Rummy",
+  "short_name": "Shanghai",
+  "description": "Shanghai Rummy card game",
+  "start_url": "../index.html",
+  "scope": "../",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b5d2a",
+  "theme_color": "#0b5d2a"
+}

@@ -263,5 +263,17 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initFullscreenButton);
   else initFullscreenButton();
 
-  window.touchDrag = { isDragging: () => !!(g && g.started), hasSelection: () => !!sel };
+  // Abort the current gesture without dropping anything (e.g. a second finger turns it into a pinch).
+  function cancel() {
+    if (!g) return;
+    if (g.started) {
+      if (g.zone) fire('dragleave', g.zone, g.x0, g.y0);
+      const end = new MouseEvent('dragend', { bubbles: true, cancelable: false, view: window });
+      end.dataTransfer = g.dt;
+      (g.src.isConnected ? g.src : document.body).dispatchEvent(end);
+    }
+    cleanup();
+  }
+
+  window.touchDrag = { isDragging: () => !!(g && g.started), hasSelection: () => !!sel, cancel };
 })();

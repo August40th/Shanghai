@@ -159,11 +159,9 @@ body {
   top: 0;
   box-sizing: border-box;
   transform-origin: 0 0;
-  /* Staging area sizes to its contents (up to the seat width) and is centred
-     under/over its player by layoutPlayers(). */
-  width: fit-content;
-  min-width: 190px;
-  max-width: var(--contract-width);
+  /* Staging area is exactly as wide as its seat's nameplate; its groups share the width. */
+  width: var(--contract-width);     /* same width as the seat's nameplate (viewer's is set inline) */
+  min-width: 0;
   height: auto;
   min-height: 90px;
   background: transparent;   /* staging area is see-through; each sub-area keeps its own white */
@@ -237,7 +235,7 @@ body {
 }
 
 .contract-subarea {
-  flex: 0 0 auto;
+  flex: 1 1 auto;           /* groups share the full width of the staging area */
   flex-shrink: 0;
   max-width: 100%;
   min-width: 0;
@@ -750,3 +748,69 @@ html.short-screen #recent-log .recent-log-row {
   .player.is-viewer .buy-controls .buy-clock-btn { min-height: 40px; font-size: 14px; padding: 4px 8px; }
   .player.is-viewer .swap-undo-btn { min-height: 40px; }
 }
+
+/* Your hand: the drop zone is the whole tray (full width AND height, padding included) at
+   all times, however few cards are in it. Negative margins cancel the padding, so nothing moves. */
+.player.is-viewer .hand-tray .hand-area {
+  width: calc(100% + 24px) !important;
+  margin: -8px -12px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  justify-content: center;
+}
+
+/* Zoom reset button (shown only while zoomed in), just left of the full-screen button */
+#zoom-reset-btn {
+  position: fixed; top: 4px; right: 44px; height: 34px; min-width: 34px; padding: 0 8px;
+  z-index: 20000; border: 1px solid rgba(255,255,255,.6); border-radius: 8px;
+  background: rgba(0,0,0,.55); color: #fff; font: bold 15px Arial, sans-serif;
+}
+#zoom-reset-btn[hidden] { display: none; }
+
+/* Smooth table resizing: when the table scale changes, seats, staging areas, piles and the
+   recent log glide to their new size and place (enabled by roundManager.js after the first
+   layout, and switched off briefly while the window itself is being resized). */
+#table-container.anim .player {
+  transition: transform .6s ease-in-out, background-color .2s ease;
+}
+#table-container.anim .contract-area,
+#table-container.anim #recent-log {
+  transition: transform .6s ease-in-out, left .6s ease-in-out, top .6s ease-in-out, width .6s ease-in-out;
+}
+#table-container.anim .pile {
+  transition: transform .6s ease-in-out, left .6s ease-in-out, top .6s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  #table-container.anim .player, #table-container.anim .contract-area,
+  #table-container.anim #recent-log, #table-container.anim .pile { transition: none; }
+}
+
+/* ── Magnify contract areas ─────────────────────────────────────────────────
+   The controls sit just outside the right edge of your hand tray (placed by roundManager.js):
+   a toggle with "-" / "+" under it. */
+.mag-controls {
+  position: absolute; left: 0; top: 0; z-index: 1000;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.mag-controls button {
+  border: 2px solid #222; border-radius: 8px; background: #e8e8e8; color: #111;
+  font: bold 22px Arial, sans-serif; line-height: 1; padding: 0; cursor: pointer;
+  touch-action: manipulation; user-select: none;
+}
+.mag-controls button:disabled { opacity: .4; cursor: not-allowed; }
+.mag-toggle { height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.mag-toggle .mag-icon  { font-size: 19px; line-height: 1; }
+.mag-toggle .mag-level { font-size: 13px; line-height: 1; }
+.mag-toggle.on { background: #ffd54f; border-color: #8a6d00; box-shadow: 0 0 8px 2px rgba(255,213,79,.8); }
+.mag-row { display: flex; gap: 5px; }
+.mag-row button { flex: 1 1 0; height: 40px; }
+
+/* The magnifier lens: a rectangle that follows the pointer over a contract area. */
+#mag-lens {
+  position: fixed; display: none; z-index: 25000; overflow: hidden; pointer-events: none;
+  border: 3px solid #ffd54f; border-radius: 8px;
+  background: rgba(6, 40, 16, 0.97);
+  box-shadow: 0 6px 22px rgba(0,0,0,.7), inset 0 0 0 1px rgba(0,0,0,.5);
+}
+#mag-lens .mag-lens-inner { position: absolute; inset: 0; }
+

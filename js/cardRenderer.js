@@ -31,7 +31,7 @@
   // Builds a single card DOM element.
   // scaleDiscard = true → card is sized to fill the discard pile area.
 
-  function createCardDiv(card, scaleDiscard = false, big = false, size = null) {
+  function createCardDiv(card, scaleDiscard = false, big = false, size = null, k = 1) {
     const { suitColors, backColors, suitSize, rankSize } = getState();
 
     const cardDiv = document.createElement('div');
@@ -86,7 +86,7 @@
     }
 
     // Fonts scale with the card: 0.65 at pile size (112 wide), 0.40 hand, 0.28 table.
-    const factor = scaleDiscard ? 0.65 * ((size ? size.w : 112) / 112) : (big ? 0.40 : 0.28);
+    const factor = scaleDiscard ? 0.65 * ((size ? size.w : 112) / 112) : (big ? 0.40 : 0.28 * k);
 
     const rankDiv = document.createElement('div');
     rankDiv.className        = 'rank';
@@ -159,6 +159,11 @@
   // This keeps the seat's height steady while computers stage and play cards, so the table
   // scale is not dragged down every time a group gets one card longer.
   const MIN_ROW_STEP = 21;
+  // Staged (contract) cards are drawn larger than the base card so what a computer lays down
+  // is readable, especially on a phone where the whole table is scaled down.
+  const STAGE_K = 1.3;
+  const STAGE_W = Math.round(CARD_WIDTH  * STAGE_K);
+  const STAGE_H = Math.round(CARD_HEIGHT * STAGE_K);
   function _rowFitStep(subAreas, cards, cw) {
     const first = subAreas[0];
     const contractEl = first && first.closest ? first.closest('.contract-area') : null;
@@ -169,10 +174,11 @@
     const counts = subAreas.map((_, a) => Math.max(1, cards.filter(c => c.subArea === a).length));
     const fixed = counts.length * (cw + 6) + 6 * (k - 1);
     const gaps  = counts.reduce((t, n) => t + (n - 1), 0);
-    const defStep = cw - CARD_OVERLAP;
+    const kk = cw / CARD_WIDTH;                       // size ratio vs. a base card
+    const defStep = cw - CARD_OVERLAP * kk;
     if (!gaps) return defStep;
     const st = Math.min(defStep, (budget - fixed) / gaps);
-    return st >= MIN_ROW_STEP ? st : null;
+    return st >= MIN_ROW_STEP * kk ? st : null;
   }
 
   // ─── renderCardArray ──────────────────────────────────────────────────────
@@ -291,7 +297,7 @@
       const hasLaid     = laidDownPlayers.has(playerIdx);
       // A computer's staged cards show only their backs until it lays down.
       const hideStaged  = _hiddenFromYou(playerIdx) && !hasLaid;
-      const rowStep     = _rowFitStep(subAreas, cards, CARD_WIDTH);
+      const rowStep     = _rowFitStep(subAreas, cards, STAGE_W);
 
       subAreas.forEach((sub, areaIdx) => {
         // Preserve the label child (first child), remove everything else.
@@ -299,9 +305,9 @@
 
         const container = document.createElement('div');
         container.style.position    = 'relative';
-        // Staging areas use the normal card size for every player, human or AI.
-        const sw = CARD_WIDTH;
-        const sh = CARD_HEIGHT;
+        // Staging areas use the same (larger) card size for every player, human or AI.
+        const sw = STAGE_W;
+        const sh = STAGE_H;
         container.style.height      = `${sh}px`;
         container.style.display     = 'inline-flex';
         sub.appendChild(container);
@@ -324,7 +330,7 @@
         sub.classList.toggle('isValid', areaIsValid);
 
         cardsForArea.forEach((card, localIdx) => {
-          const cardDiv = createCardDiv(card, false);
+          const cardDiv = createCardDiv(card, false, false, null, STAGE_K);
           if (hideStaged) cardDiv.classList.add('face-down');
           cardDiv.style.position   = 'relative';
           cardDiv.style.width      = `${sw}px`;
